@@ -80,7 +80,7 @@ export interface Notification {
   type: 'shift_assigned' | 'shift_changed' | 'exchange_request' | 'exchange_response' | 'reminder' | 'announcement';
   title: string;
   message: string;
-  data?: Record<string, any>;
+  data?: Record<string, unknown>;
   read: boolean;
   createdAt: Date;
 }

@@ -36,13 +36,14 @@ export default function LoginPage() {
     try {
       await signIn(data.email, data.password);
       router.push('/dashboard');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Login error:', error);
-      if (error.code === 'auth/user-not-found') {
+      const firebaseError = error as { code?: string };
+      if (firebaseError.code === 'auth/user-not-found') {
         setError('ユーザーが見つかりません');
-      } else if (error.code === 'auth/wrong-password') {
+      } else if (firebaseError.code === 'auth/wrong-password') {
         setError('パスワードが間違っています');
-      } else if (error.code === 'auth/invalid-email') {
+      } else if (firebaseError.code === 'auth/invalid-email') {
         setError('無効なメールアドレスです');
       } else {
         setError('ログインに失敗しました');

@@ -35,7 +35,7 @@ interface AppState {
   setSidebarOpen: (open: boolean) => void;
 }
 
-export const useStore = create<AppState>((set, get) => ({
+export const useStore = create<AppState>((set) => ({
   // User state
   currentUser: null,
   setCurrentUser: (user) => set({ currentUser: user }),
