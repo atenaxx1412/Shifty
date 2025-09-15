@@ -7,21 +7,23 @@ export function middleware(request: NextRequest) {
   // Public routes that don't require authentication
   const publicRoutes = ['/login', '/'];
   
+  // Protected routes that require authentication
+  const protectedRoutes = ['/root', '/manager', '/staff'];
+  
   // Check if the path is a public route
   const isPublicRoute = publicRoutes.some(route => path === route);
+  const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route));
   
   // Get authentication cookie (this will be set after Firebase auth)
   const token = request.cookies.get('auth-token');
   
   // Redirect to login if not authenticated and trying to access protected route
-  if (!isPublicRoute && !token) {
+  if ((isProtectedRoute || !isPublicRoute) && !token) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
   
-  // Redirect to dashboard if authenticated and trying to access login
-  if (isPublicRoute && token && path !== '/') {
-    return NextResponse.redirect(new URL('/dashboard', request.url));
-  }
+  // Allow authenticated users to access their designated pages
+  // Role-based routing is handled by AuthContext after login
   
   return NextResponse.next();
 }

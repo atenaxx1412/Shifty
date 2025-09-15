@@ -1,25 +1,24 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '@/contexts/AuthContext';
-import { Lock, Mail, AlertCircle } from 'lucide-react';
+import { Lock, User, AlertCircle, CheckCircle } from 'lucide-react';
 
 const loginSchema = z.object({
-  email: z.string().email('有効なメールアドレスを入力してください'),
+  userId: z.string().min(1, 'ユーザーIDを入力してください'),
   password: z.string().min(6, 'パスワードは6文字以上で入力してください'),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
   const { signIn } = useAuth();
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const {
     register,
@@ -31,23 +30,30 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     setError('');
+    setSuccess(false);
     setLoading(true);
 
     try {
-      await signIn(data.email, data.password);
-      router.push('/dashboard');
+      await signIn(data.userId, data.password);
+      setSuccess(true);
+      // AuthContext handles role-based redirect with delay
     } catch (error: unknown) {
       console.error('Login error:', error);
-      const firebaseError = error as { code?: string };
-      if (firebaseError.code === 'auth/user-not-found') {
-        setError('ユーザーが見つかりません');
-      } else if (firebaseError.code === 'auth/wrong-password') {
-        setError('パスワードが間違っています');
-      } else if (firebaseError.code === 'auth/invalid-email') {
-        setError('無効なメールアドレスです');
-      } else {
-        setError('ログインに失敗しました');
-      }
+      const errorMessage = error instanceof Error && 'code' in error
+        ? (() => {
+            switch ((error as { code: string }).code) {
+              case 'auth/user-not-found':
+                return 'ユーザーが見つかりません';
+              case 'auth/wrong-password':
+                return 'パスワードが間違っています';
+              case 'auth/invalid-email':
+                return '無効なユーザーIDです';
+              default:
+                return 'ログインに失敗しました';
+            }
+          })()
+        : 'ログインに失敗しました';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -78,25 +84,32 @@ export default function LoginPage() {
             </div>
           )}
 
+          {success && (
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-md flex items-center space-x-2 text-green-700">
+              <CheckCircle className="h-5 w-5" />
+              <span>ログイン成功！リダイレクトしています...</span>
+            </div>
+          )}
+
           <form className="space-y-6" onSubmit={handleSubmit(onSubmit)}>
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-                メールアドレス
+              <label htmlFor="userId" className="block text-sm font-medium text-gray-700">
+                ユーザーID
               </label>
               <div className="mt-1 relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400" />
+                  <User className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
-                  {...register('email')}
-                  type="email"
-                  autoComplete="email"
+                  {...register('userId')}
+                  type="text"
+                  autoComplete="username"
                   className="appearance-none block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  placeholder="example@email.com"
+                  placeholder="ユーザーIDを入力"
                 />
               </div>
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+              {errors.userId && (
+                <p className="mt-1 text-sm text-red-600">{errors.userId.message}</p>
               )}
             </div>
 
@@ -138,10 +151,10 @@ export default function LoginPage() {
             <div>
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || success}
                 className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'ログイン中...' : 'ログイン'}
+                {success ? 'リダイレクト中...' : loading ? 'ログイン中...' : 'ログイン'}
               </button>
             </div>
           </form>
@@ -158,8 +171,8 @@ export default function LoginPage() {
               </div>
             </div>
             <div className="mt-4 space-y-2 text-sm text-gray-600">
-              <p>管理者: admin@shifty.com / password123</p>
-              <p>スタッフ: staff@shifty.com / password123</p>
+              <p>管理者: root / demo123</p>
+              <p>店長: manager / demo123</p>
             </div>
           </div>
         </div>
