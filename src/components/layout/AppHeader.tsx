@@ -129,11 +129,12 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                   quality={85}
                 />
                 <Image
-                  src="/images/text-only.svg"
+                  src="/images/text-only-transparent.png"
                   alt="Shifty Text"
                   width={120}
                   height={56}
                   className="h-12 w-auto sm:h-20 -ml-5"
+                  quality={85}
                 />
               </div>
             </button>
