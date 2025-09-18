@@ -121,11 +121,12 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
             >
               <div className="flex items-center space-x-1">
                 <Image
-                  src="/images/logo-only.svg"
+                  src="/images/logo-only-transparent.png"
                   alt="Shifty Logo"
                   width={56}
                   height={56}
                   className="w-12 h-12 sm:w-14 sm:h-14"
+                  quality={85}
                 />
                 <Image
                   src="/images/text-only.svg"
