@@ -4,12 +4,11 @@ import React from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  Shield, 
-  LogOut, 
-  User, 
-  Bell, 
-  Menu,
+import {
+  Shield,
+  LogOut,
+  User,
+  Bell,
   Home,
   Users,
   Settings,
@@ -38,7 +37,6 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
   });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<SystemNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
@@ -113,7 +111,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Left Section */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
             {/* Logo */}
             <button
               onClick={() => router.push(`/${currentUser?.role}`)}
@@ -123,30 +121,21 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                 <Image
                   src="/images/logo-only-transparent.png"
                   alt="Shifty Logo"
-                  width={56}
-                  height={56}
-                  className="w-12 h-12 sm:w-14 sm:h-14"
+                  width={80}
+                  height={80}
+                  className="w-20 h-20 sm:w-14 sm:h-14"
                   quality={85}
                 />
                 <Image
                   src="/images/text-only-transparent.png"
                   alt="Shifty Text"
-                  width={120}
-                  height={56}
-                  className="h-12 w-auto sm:h-20 -ml-5"
+                  width={160}
+                  height={80}
+                  className="h-20 w-auto sm:h-20 -ml-9"
                   quality={85}
                 />
               </div>
             </button>
-            
-            {showSidebar && (
-              <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <Menu className="h-5 w-5 text-gray-600" />
-              </button>
-            )}
             
             <div className="flex items-center space-x-3">
               <div>
@@ -294,34 +283,6 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
         </div>
       </div>
 
-      {/* Mobile Menu */}
-      {isMobileMenuOpen && showSidebar && (
-        <div className="lg:hidden border-t border-gray-100 bg-white">
-          <nav className="px-4 py-2 space-y-1">
-            <button
-              onClick={() => router.push(`/${currentUser?.role}`)}
-              className="w-full px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg flex items-center space-x-2"
-            >
-              <Home className="h-4 w-4" />
-              <span>ダッシュボード</span>
-            </button>
-            <button
-              onClick={() => router.push(`/${currentUser?.role}/users`)}
-              className="w-full px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg flex items-center space-x-2"
-            >
-              <Users className="h-4 w-4" />
-              <span>ユーザー管理</span>
-            </button>
-            <button
-              onClick={() => router.push(`/${currentUser?.role}/settings`)}
-              className="w-full px-3 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-50 rounded-lg flex items-center space-x-2"
-            >
-              <Settings className="h-4 w-4" />
-              <span>設定</span>
-            </button>
-          </nav>
-        </div>
-      )}
     </header>
   );
 }

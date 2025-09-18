@@ -73,7 +73,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className={`h-screen overflow-hidden flex items-center justify-center bg-gray-50 px-4 py-4 sm:py-8 lg:py-12 sm:px-6 lg:px-8 ${success ? 'animate-page-exit' : ''}`}>
+    <div
+      className={`h-screen overflow-hidden flex items-center justify-center bg-gray-50 px-4 sm:px-6 lg:px-8 ${success ? 'animate-page-exit' : ''}`}
+      style={{
+        height: '100dvh',
+        touchAction: 'none',
+        position: 'fixed',
+        width: '100%',
+        top: 0,
+        left: 0
+      }}
+    >
       <div className="max-w-sm w-full space-y-8">
         <div className="text-center">
           <div className="mb-8 flex justify-center">
