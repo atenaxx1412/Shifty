@@ -5,15 +5,15 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
 import Link from 'next/link';
-import { 
-  Shield, 
-  Users, 
-  Database, 
-  Settings, 
-  BarChart3, 
-  FileText, 
-  UserCheck, 
-  AlertTriangle, 
+import {
+  Shield,
+  Users,
+  Database,
+  Settings,
+  BarChart3,
+  FileText,
+  UserCheck,
+  AlertTriangle,
   TrendingUp,
   Activity,
   Server,
@@ -23,6 +23,9 @@ import {
 } from 'lucide-react';
 import { collection, getDocs, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import StatCard from '@/components/ui/StatCard';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useFirebaseData, useActivityLogs } from '@/hooks/useFirebaseData';
 
 interface ActivityLog {
   id: string;
@@ -36,8 +39,6 @@ interface ActivityLog {
 
 export default function RootPage() {
   const { currentUser } = useAuth();
-  const [recentActivities, setRecentActivities] = useState<ActivityLog[]>([]);
-  const [loading, setLoading] = useState(true);
   const [totalUsers, setTotalUsers] = useState(0);
   const [totalShops, setTotalShops] = useState(0);
   const [activeShifts, setActiveShifts] = useState(0);
@@ -45,42 +46,45 @@ export default function RootPage() {
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
 
+  // Use the custom hook for activity logs
+  const { data: recentActivities, loading } = useActivityLogs(4);
+
   const adminStats = [
-    { 
-      label: '総ユーザー数', 
-      value: totalUsers.toString(), 
-      unit: '名', 
-      icon: UserCheck, 
+    {
+      label: '総ユーザー数',
+      value: totalUsers,
+      unit: '名',
+      icon: UserCheck,
       gradient: 'from-blue-500 to-blue-600',
       change: '+12%',
-      trend: 'up'
+      trend: 'up' as const
     },
-    { 
-      label: '店長数', 
-      value: totalShops.toString(), 
-      unit: '名', 
-      icon: Users, 
+    {
+      label: '店長数',
+      value: totalShops,
+      unit: '名',
+      icon: Users,
       gradient: 'from-emerald-500 to-emerald-600',
       change: '+1',
-      trend: 'up'
+      trend: 'up' as const
     },
-    { 
-      label: 'アクティブシフト', 
-      value: activeShifts.toString(), 
-      unit: 'シフト', 
-      icon: Activity, 
+    {
+      label: 'アクティブシフト',
+      value: activeShifts,
+      unit: 'シフト',
+      icon: Activity,
       gradient: 'from-purple-500 to-purple-600',
       change: '+8%',
-      trend: 'up'
+      trend: 'up' as const
     },
-    { 
-      label: 'システムアラート', 
-      value: systemAlerts.toString(), 
-      unit: '件', 
-      icon: AlertTriangle, 
+    {
+      label: 'システムアラート',
+      value: systemAlerts,
+      unit: '件',
+      icon: AlertTriangle,
       gradient: 'from-red-500 to-red-600',
       change: systemAlerts > 0 ? `+${systemAlerts}` : '0',
-      trend: systemAlerts > 0 ? 'up' : 'down'
+      trend: (systemAlerts > 0 ? 'up' : 'down') as const
     },
   ];
 
@@ -176,39 +180,9 @@ export default function RootPage() {
     }
   };
 
-  // リアルタイムでアクティビティログを取得
+  // 統計データを取得
   useEffect(() => {
-    // 統計データを取得
     fetchStatsData();
-
-    const unsubscribe = onSnapshot(
-      query(collection(db, 'activityLogs'), orderBy('timestamp', 'desc'), limit(4)),
-      (snapshot) => {
-        const activities = snapshot.docs.map(doc => {
-          const data = doc.data();
-          const timestamp = data.timestamp?.toDate() || new Date();
-          
-          return {
-            id: doc.id,
-            action: data.action || 'アクション',
-            user: data.user || 'ユーザー',
-            time: getRelativeTime(timestamp),
-            type: data.type || 'system',
-            detail: data.detail,
-            timestamp: timestamp
-          } as ActivityLog;
-        });
-        
-        setRecentActivities(activities);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error fetching activity logs:', error);
-        setLoading(false);
-      }
-    );
-
-    return () => unsubscribe();
   }, []);
 
   // リアルタイム時計の設定 (クライアントサイドのみ)
@@ -277,29 +251,20 @@ export default function RootPage() {
               </div>
             </div>
 
-            {/* Stats Grid - Simplified */}
+            {/* Stats Grid - Using StatCard Component */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {adminStats.map((stat, index) => (
-                <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">{stat.label}</p>
-                      <p className="text-2xl font-semibold text-gray-900">
-                        {stat.value}
-                        <span className="text-sm font-normal text-gray-500 ml-1">{stat.unit}</span>
-                      </p>
-                      <div className={`flex items-center space-x-1 mt-2 text-xs ${
-                        stat.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        <TrendingUp className={`h-3 w-3 ${stat.trend === 'down' ? 'rotate-180' : ''}`} />
-                        <span>{stat.change}</span>
-                      </div>
-                    </div>
-                    <div className="p-2 bg-gray-50 rounded-lg">
-                      <stat.icon className="h-5 w-5 text-gray-600" />
-                    </div>
-                  </div>
-                </div>
+                <StatCard
+                  key={index}
+                  label={stat.label}
+                  value={stat.value}
+                  unit={stat.unit}
+                  icon={stat.icon}
+                  gradient={stat.gradient}
+                  change={stat.change}
+                  trend={stat.trend}
+                  size="md"
+                />
               ))}
             </div>
 
@@ -342,44 +307,40 @@ export default function RootPage() {
                   </div>
                   
                   {loading ? (
-                    <div className="space-y-3">
-                      {[...Array(3)].map((_, i) => (
-                        <div key={i} className="flex items-center space-x-3 p-3">
-                          <div className="w-6 h-6 bg-gray-200 rounded-lg animate-pulse"></div>
-                          <div className="flex-1 space-y-2">
-                            <div className="w-3/4 h-3 bg-gray-200 rounded animate-pulse"></div>
-                            <div className="w-1/2 h-2 bg-gray-100 rounded animate-pulse"></div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <LoadingSpinner text="アクティビティを読み込み中..." size="sm" />
                   ) : recentActivities.length > 0 ? (
                     <div className="space-y-3">
-                      {recentActivities.map((activity) => (
+                      {recentActivities.map((activity) => {
+                        const activityData = activity as any;
+                        const timestamp = activityData.timestamp?.toDate ? activityData.timestamp.toDate() : new Date(activityData.timestamp);
+                        const timeAgo = getRelativeTime(timestamp);
+
+                        return (
                         <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
                           <div className={`p-1.5 rounded-lg ${
-                            activity.type === 'user' ? 'bg-blue-100 text-blue-600' :
-                            activity.type === 'login' ? 'bg-green-100 text-green-600' :
-                            activity.type === 'security' ? 'bg-red-100 text-red-600' :
+                            activityData.type === 'user' ? 'bg-blue-100 text-blue-600' :
+                            activityData.type === 'login' ? 'bg-green-100 text-green-600' :
+                            activityData.type === 'security' ? 'bg-red-100 text-red-600' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {activity.type === 'user' ? <UserCheck className="h-3 w-3" /> :
-                             activity.type === 'login' ? <CheckCircle className="h-3 w-3" /> :
-                             activity.type === 'security' ? <AlertTriangle className="h-3 w-3" /> :
+                            {activityData.type === 'user' ? <UserCheck className="h-3 w-3" /> :
+                             activityData.type === 'login' ? <CheckCircle className="h-3 w-3" /> :
+                             activityData.type === 'security' ? <AlertTriangle className="h-3 w-3" /> :
                              <Activity className="h-3 w-3" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-sm font-medium text-gray-900">{activity.action}</p>
-                              <span className="text-xs text-gray-400">{activity.time}</span>
+                              <p className="text-sm font-medium text-gray-900">{activityData.action || 'アクション'}</p>
+                              <span className="text-xs text-gray-400">{timeAgo}</span>
                             </div>
-                            <p className="text-xs text-gray-500">{activity.user}</p>
-                            {activity.detail && (
-                              <p className="text-xs text-gray-400 mt-0.5">{activity.detail}</p>
+                            <p className="text-xs text-gray-500">{activityData.user || 'ユーザー'}</p>
+                            {activityData.detail && (
+                              <p className="text-xs text-gray-400 mt-0.5">{activityData.detail}</p>
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="text-center py-8">

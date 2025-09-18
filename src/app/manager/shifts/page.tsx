@@ -51,9 +51,9 @@ export default function ManagerShiftsPage() {
   const [shiftRequests, setShiftRequests] = useState<ShiftRequestEnhanced[]>([]);
   const [staff, setStaff] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [staffLoading, setStaffLoading] = useState(true);
+  const [staffLoading] = useState(true); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [selectedWeek, setSelectedWeek] = useState(new Date());
-  const [viewMode, setViewMode] = useState<'week' | 'month' | 'list'>('week');
+  const [viewMode] = useState<'week' | 'month' | 'list'>('week'); // eslint-disable-line @typescript-eslint/no-unused-vars
   const [filterStatus, setFilterStatus] = useState<'all' | 'draft' | 'published' | 'completed'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState<ShiftStats>({
@@ -586,8 +586,8 @@ export default function ManagerShiftsPage() {
               <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">総シフト</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.totalShifts}</p>
+                    <p className="text-sm font-medium text-blue-600">総シフト</p>
+                    <p className="text-2xl font-bold text-blue-900">{stats.totalShifts}</p>
                   </div>
                   <CalendarDays className="h-8 w-8 text-blue-500" />
                 </div>
@@ -596,7 +596,7 @@ export default function ManagerShiftsPage() {
               <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">総労働時間</p>
+                    <p className="text-sm font-medium text-purple-600">総労働時間</p>
                     <p className="text-2xl font-bold text-purple-600">{Math.round(stats.totalStaffHours)}</p>
                   </div>
                   <Clock className="h-8 w-8 text-purple-500" />
@@ -606,7 +606,7 @@ export default function ManagerShiftsPage() {
               <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-gray-600">人件費予算</p>
+                    <p className="text-sm font-medium text-indigo-600">人件費予算</p>
                     <p className="text-2xl font-bold text-indigo-600">
                       ¥{budgetCalculation ? budgetCalculation.summary.totalCost.toLocaleString() : stats.estimatedCost.toLocaleString()}
                     </p>
@@ -633,7 +633,7 @@ export default function ManagerShiftsPage() {
                     <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setSelectedWeek(subWeeks(selectedWeek, 1))}
-                        className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                        className="p-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors"
                       >
                         <Calendar className="h-5 w-5" />
                       </button>
@@ -642,7 +642,7 @@ export default function ManagerShiftsPage() {
                       </span>
                       <button
                         onClick={() => setSelectedWeek(addWeeks(selectedWeek, 1))}
-                        className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors"
+                        className="p-2 rounded-lg bg-blue-100 hover:bg-blue-200 transition-colors"
                       >
                         <Calendar className="h-5 w-5" />
                       </button>
@@ -650,13 +650,13 @@ export default function ManagerShiftsPage() {
 
                     {/* Search */}
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-400" />
                       <input
                         type="text"
                         placeholder="シフトID・日付で検索..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="pl-10 pr-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       />
                     </div>
 
@@ -664,7 +664,7 @@ export default function ManagerShiftsPage() {
                     <select
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value as 'all' | 'draft' | 'published' | 'completed')}
-                      className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="px-4 py-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="all">全てのステータス</option>
                       <option value="draft">下書き</option>
@@ -677,14 +677,14 @@ export default function ManagerShiftsPage() {
                   <div className="flex items-center space-x-3">
                     <button
                       onClick={fetchShifts}
-                      className="flex items-center px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                      className="flex items-center px-4 py-2 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
                     >
                       <RefreshCw className="h-4 w-4 mr-2" />
                       <span className="hidden sm:inline">更新</span>
                     </button>
                     
                     <a
-                      href="/manager/shifts/calendar"
+                      href="/manager/calendar"
                       className="flex items-center px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
                     >
                       <Calendar className="h-4 w-4 mr-2" />
@@ -697,7 +697,7 @@ export default function ManagerShiftsPage() {
                 <div className="flex flex-col lg:flex-row gap-4">
                   {/* Shift Creation Group */}
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">シフト作成</h3>
+                    <h3 className="text-sm font-medium text-blue-700 mb-3">シフト作成</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <button
                         onClick={handleCreateShift}
@@ -724,7 +724,7 @@ export default function ManagerShiftsPage() {
 
                   {/* Management Actions Group */}
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">管理・分析</h3>
+                    <h3 className="text-sm font-medium text-green-700 mb-3">管理・分析</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         onClick={() => setShowBudgetDetails(true)}
@@ -738,7 +738,7 @@ export default function ManagerShiftsPage() {
                       <button
                         onClick={calculateBudget}
                         disabled={budgetLoading}
-                        className="flex items-center justify-center px-4 py-2 text-gray-600 hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors disabled:opacity-50"
+                        className="flex items-center justify-center px-4 py-2 text-green-600 hover:bg-green-50 border border-green-300 rounded-lg transition-colors disabled:opacity-50"
                       >
                         <TrendingUp className="h-4 w-4 mr-2" />
                         <span>予算更新</span>
@@ -748,7 +748,7 @@ export default function ManagerShiftsPage() {
 
                   {/* Export Actions Group */}
                   <div className="flex-1">
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">エクスポート</h3>
+                    <h3 className="text-sm font-medium text-purple-700 mb-3">エクスポート</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <button
                         onClick={handleExportShifts}
@@ -774,8 +774,8 @@ export default function ManagerShiftsPage() {
 
             {/* Shifts List */}
             <div className="bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-white/20">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">
+              <div className="px-6 py-4 border-b border-blue-200">
+                <h3 className="text-lg font-semibold text-blue-900">
                   シフト一覧 ({filteredShifts.length}件)
                 </h3>
               </div>
@@ -783,23 +783,23 @@ export default function ManagerShiftsPage() {
               {loading ? (
                 <div className="px-6 py-12 text-center">
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <p className="mt-2 text-gray-500">読み込み中...</p>
+                  <p className="mt-2 text-blue-500">読み込み中...</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-200">
+                <div className="divide-y divide-blue-100">
                   {filteredShifts.map((shift) => (
-                    <div key={shift.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
+                    <div key={shift.id} className="px-6 py-4 hover:bg-blue-50 transition-colors">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-4">
                           <div>
                             <div className="flex items-center space-x-2 mb-1">
-                              <h4 className="font-semibold text-gray-900">
+                              <h4 className="font-semibold text-blue-900">
                                 {format(shift.date, 'MM月dd日（E）', { locale: ja })}
                               </h4>
                               {getStatusBadge(shift.status)}
                               {getComplexityBadge(shift.metadata.complexity)}
                             </div>
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
+                            <div className="flex items-center space-x-4 text-sm text-blue-600">
                               <span className="flex items-center">
                                 <Users className="h-4 w-4 mr-1" />
                                 {shift.metadata.totalRequiredStaff}名必要 / {shift.metadata.totalAssignedStaff}名配置
@@ -827,10 +827,10 @@ export default function ManagerShiftsPage() {
                             </button>
                           )}
                           
-                          <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                          <button className="p-2 text-blue-400 hover:text-blue-600 transition-colors">
                             <Eye className="h-4 w-4" />
                           </button>
-                          <button className="p-2 text-gray-400 hover:text-gray-600 transition-colors">
+                          <button className="p-2 text-green-400 hover:text-green-600 transition-colors">
                             <Edit className="h-4 w-4" />
                           </button>
                           <button 
@@ -848,9 +848,9 @@ export default function ManagerShiftsPage() {
               
               {!loading && filteredShifts.length === 0 && (
                 <div className="px-6 py-12 text-center">
-                  <CalendarDays className="mx-auto h-12 w-12 text-gray-400" />
-                  <h3 className="mt-2 text-sm font-medium text-gray-900">シフトが見つかりません</h3>
-                  <p className="mt-1 text-sm text-gray-500">新しいシフトを作成してください</p>
+                  <CalendarDays className="mx-auto h-12 w-12 text-blue-400" />
+                  <h3 className="mt-2 text-sm font-medium text-blue-900">シフトが見つかりません</h3>
+                  <p className="mt-1 text-sm text-blue-500">新しいシフトを作成してください</p>
                   <button
                     onClick={handleCreateShift}
                     className="mt-4 flex items-center mx-auto px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"

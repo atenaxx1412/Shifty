@@ -162,6 +162,19 @@
   animation: blob 7s infinite;
 }
 
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
 .animation-delay-2000 {
   animation-delay: 2s;
 }
@@ -172,4 +185,35 @@
 
 .animate-shake {
   animation: shake 0.5s;
+}
+
+/* Page transition animations */
+@keyframes page-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-page-exit {
+  animation: page-exit 300ms ease-out forwards;
+}
+
+.animate-page-enter {
+  animation: page-enter 400ms ease-out forwards;
 }

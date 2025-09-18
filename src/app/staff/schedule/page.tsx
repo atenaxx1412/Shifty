@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import AppHeader from '@/components/layout/AppHeader';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { 
   Calendar, 
@@ -158,25 +159,11 @@ export default function StaffSchedulePage() {
 
   return (
     <ProtectedRoute allowedRoles={['root', 'manager', 'staff']}>
+      <AppHeader title="シフト確認" />
       <DashboardLayout>
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="flex items-center space-x-4">
-              <a 
-                href="/staff" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-600" />
-              </a>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">私のシフト表</h1>
-                <p className="text-gray-600">
-                  {currentUser?.name}さんのシフトスケジュール
-                </p>
-              </div>
-            </div>
-            
+          {/* Controls */}
+          <div className="flex justify-end">
             <div className="flex items-center space-x-3">
               <button className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors">
                 <FileText className="h-4 w-4" />

@@ -7,6 +7,7 @@ export interface User {
   name: string; // 氏名
   role: UserRole;
   managerId?: string; // 店長のUID（staffの場合のみ使用）
+  shopId?: string; // 店舗ID（managerとstaffの場合に使用）
   
   // 店長の場合の店舗情報
   shopName?: string; // 店舗名（managerの場合）
@@ -214,6 +215,38 @@ export interface ShiftExchange {
   updatedAt: Date;
 }
 
+// ========== MONTHLY SHIFT REQUEST TYPES ==========
+
+export interface DayShiftRequest {
+  date: Date;
+  timeSlots: { start: string; end: string }[];
+  preference: 'preferred' | 'available' | 'unavailable';
+  positions?: string[];
+  note?: string;
+}
+
+export interface MonthlyShiftRequest {
+  monthlyRequestId: string;
+  staffId: string;
+  managerId: string;
+  targetMonth: string; // YYYY-MM format
+  title: string;
+  dayRequests: DayShiftRequest[];
+  overallNote?: string;
+  status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'partially_approved' | 'rejected';
+  submittedAt?: Date;
+  reviewedAt?: Date;
+  reviewedBy?: string;
+  reviewNotes?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface MonthlyShiftRequestWithStaff extends MonthlyShiftRequest {
+  staffName: string;
+  staffEmail?: string;
+}
+
 export interface Notification {
   notificationId: string;
   userId: string;
@@ -348,6 +381,7 @@ export interface BudgetCalculation {
     budgetLimit?: number; // 予算上限
     budgetVariance: number; // 予算差額
   };
+  projectedOverrun?: number; // 予算超過予想
   assumptions: {
     baseHourlyRate: Record<string, number>; // userId -> hourly rate
     overtimeMultiplier: number; // 残業倍率 (e.g., 1.25)

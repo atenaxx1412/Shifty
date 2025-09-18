@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import DashboardLayout from '@/components/layout/DashboardLayout';
+import AppHeader from '@/components/layout/AppHeader';
+import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import { 
   Calendar, 
   ArrowLeft,
@@ -28,7 +29,7 @@ import { db } from '@/lib/firebase';
 // カレンダー表示形式の型定義
 type CalendarViewType = 'day' | 'week' | 'halfMonth' | 'month';
 
-export default function ManagerShiftCalendarPage() {
+export default function ManagerCalendarPage() {
   const { currentUser } = useAuth();
   
   // フォールバック用のマネージャー情報（ログインしていない場合）
@@ -631,36 +632,30 @@ export default function ManagerShiftCalendarPage() {
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center min-h-64">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-            <p className="text-gray-600">シフトカレンダーを読み込み中...</p>
-          </div>
+      <ProtectedRoute requiredRoles={['root', 'manager']}>
+        <div className="h-screen overflow-hidden bg-gray-50">
+          <AppHeader title="シフトカレンダー" />
+          <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+            <div className="flex items-center justify-center min-h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+                <p className="text-gray-600">シフトカレンダーを読み込み中...</p>
+              </div>
+            </div>
+          </main>
         </div>
-      </DashboardLayout>
+      </ProtectedRoute>
     );
   }
 
   return (
-    <DashboardLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="flex items-center space-x-4">
-              <a 
-                href="/manager/shifts" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-600" />
-              </a>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">シフトカレンダー</h1>
-                <p className="text-gray-600">全体のシフト状況を管理</p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3 flex-wrap">
+    <ProtectedRoute requiredRoles={['root', 'manager']}>
+      <div className="h-screen overflow-hidden bg-gray-50">
+        <AppHeader title="シフトカレンダー" />
+        
+        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="flex items-center justify-end space-x-3 flex-wrap">
               {/* 開発用：サンプルデータ作成ボタン */}
               {staff.length === 0 && (
                 <button
@@ -1175,7 +1170,8 @@ export default function ManagerShiftCalendarPage() {
               <p className="text-gray-400 mt-2">スタッフを追加してからシフトを管理してください</p>
             </div>
           )}
-        </div>
+          </div>
+        </main>
         
         {/* Chat Sidebar */}
         <ChatSidebar
@@ -1489,6 +1485,7 @@ export default function ManagerShiftCalendarPage() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+      </div>
+    </ProtectedRoute>
   );
 }

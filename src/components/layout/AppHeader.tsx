@@ -2,8 +2,10 @@
 
 import React from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import { useAuth } from '@/contexts/AuthContext';
 import { 
-  Calendar, 
+  Shield, 
   LogOut, 
   User, 
   Bell, 
@@ -23,14 +25,17 @@ interface AppHeaderProps {
 
 export default function AppHeader({ title = 'Dashboard', showSidebar = true }: AppHeaderProps) {
   const router = useRouter();
-  
-  // ハードコーディングされたマネージャー情報（認証不要）
-  const currentUser = {
-    uid: 'manager_001',
-    email: 'manager@shifty.com',
-    name: 'マネージャー',
-    role: 'manager' as const
-  };
+  const { currentUser } = useAuth();
+
+  // デバッグ: 現在のユーザー情報をログ出力
+  console.log('🔍 AppHeader - currentUser:', {
+    uid: currentUser?.uid,
+    name: currentUser?.name,
+    email: currentUser?.email,
+    role: currentUser?.role,
+    userId: currentUser?.userId,
+    shopName: currentUser?.shopName
+  });
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -109,6 +114,29 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
         <div className="flex items-center justify-between h-16">
           {/* Left Section */}
           <div className="flex items-center space-x-4">
+            {/* Logo */}
+            <button
+              onClick={() => router.push(`/${currentUser?.role}`)}
+              className="flex items-center hover:opacity-80 transition-opacity duration-200 cursor-pointer"
+            >
+              <div className="flex items-center space-x-1">
+                <Image
+                  src="/images/logo-only.svg"
+                  alt="Shifty Logo"
+                  width={56}
+                  height={56}
+                  className="w-12 h-12 sm:w-14 sm:h-14"
+                />
+                <Image
+                  src="/images/text-only.svg"
+                  alt="Shifty Text"
+                  width={120}
+                  height={56}
+                  className="h-12 w-auto sm:h-20 -ml-5"
+                />
+              </div>
+            </button>
+            
             {showSidebar && (
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -119,16 +147,9 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
             )}
             
             <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-xl ${getRoleColor(currentUser?.role)} shadow-lg`}>
-                <Calendar className="h-6 w-6 text-white" />
-              </div>
               <div>
-                <div className="flex items-center space-x-2">
-                  <h1 className="text-xl font-bold text-gray-900">{title}</h1>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Shifty Management System
-                </p>
+
+
               </div>
             </div>
           </div>
@@ -218,8 +239,10 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
               >
                 <div className="flex items-center space-x-3">
                   <div className="hidden sm:block text-right">
-                    <p className="text-sm font-semibold text-gray-900">{currentUser?.name}</p>
-                    <p className="text-xs text-gray-500">{currentUser?.email}</p>
+                    <p className="text-sm font-semibold text-gray-900">
+                      {currentUser?.name || currentUser?.userId || 'ユーザー'}
+                    </p>
+                    
                   </div>
                   <div className="relative">
                     <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
@@ -235,7 +258,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2">
                   <div className="px-4 py-3 border-b border-gray-100">
                     <p className="text-sm font-semibold text-gray-900">{currentUser?.name}</p>
-                    <p className="text-xs text-gray-500">{currentUser?.email}</p>
+                    
                     <div className="mt-2">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${getRoleColor(currentUser?.role)}`}>
                         {getRoleBadge(currentUser?.role)}

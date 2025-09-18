@@ -6,8 +6,8 @@ import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
 import { collection, getDocs, query, orderBy, limit, doc, deleteDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { 
-  FileText, 
+import {
+  FileText,
   Search,
   Filter,
   Download,
@@ -22,6 +22,10 @@ import {
   Shield,
   Trash2
 } from 'lucide-react';
+import GradientHeader from '@/components/ui/GradientHeader';
+import StatCard from '@/components/ui/StatCard';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useSystemLogs } from '@/hooks/useFirebaseData';
 
 interface LogEntry {
   id: string;
@@ -42,59 +46,36 @@ interface LogEntry {
 
 export default function LogsPage() {
   const { currentUser } = useAuth();
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-  // Fetch logs from Firestore
-  const fetchLogs = async () => {
-    try {
-      setLoading(true);
-      // Get the latest 100 logs, ordered by timestamp descending
-      const logsQuery = query(
-        collection(db, 'system_logs'),
-        orderBy('timestamp', 'desc'),
-        limit(100)
-      );
-      
-      const logsSnapshot = await getDocs(logsQuery);
-      const logsData = logsSnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          timestamp: data.timestamp?.toDate() || new Date(),
-          level: data.level || 'info',
-          category: data.category || 'system',
-          action: data.action || 'Unknown Action',
-          userId: data.userId,
-          userName: data.userName,
-          userRole: data.userRole,
-          resource: data.resource,
-          details: data.details,
-          success: data.success ?? true,
-          errorMessage: data.errorMessage,
-          ipAddress: data.ipAddress,
-          sessionId: data.sessionId
-        } as LogEntry;
-      });
-      
-      setLogs(logsData);
-      setFilteredLogs(logsData);
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-      setLogs([]);
-      setFilteredLogs([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Use the custom hook for system logs
+  const { data: logs, loading, refresh: refreshLogs } = useSystemLogs(levelFilter, categoryFilter, 100);
 
+  // Initialize filtered logs when logs data changes
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    setFilteredLogs(logs.map(log => {
+      const logData = log as any;
+      return {
+        id: logData.id,
+        timestamp: logData.timestamp?.toDate ? logData.timestamp.toDate() : new Date(logData.timestamp),
+        level: logData.level || 'info',
+        category: logData.category || 'system',
+        action: logData.action || 'Unknown Action',
+        userId: logData.userId,
+        userName: logData.userName,
+        userRole: logData.userRole,
+        resource: logData.resource,
+        details: logData.details,
+        success: logData.success ?? true,
+        errorMessage: logData.errorMessage,
+        ipAddress: logData.ipAddress,
+        sessionId: logData.sessionId
+      } as LogEntry;
+    }));
+  }, [logs]);
 
   // Delete log entry
   const handleDeleteLog = async (logId: string, action: string) => {
@@ -104,8 +85,8 @@ export default function LogsPage() {
       await deleteDoc(doc(db, 'system_logs', logId));
       
       // Remove from local state
-      const updatedLogs = logs.filter(log => log.id !== logId);
-      setLogs(updatedLogs);
+      // Refresh logs after deletion
+      refreshLogs();
       setFilteredLogs(updatedLogs.filter(log => {
         let matches = true;
         
@@ -199,13 +180,38 @@ export default function LogsPage() {
     }).format(date);
   };
 
-  const logStats = {
-    total: logs.length,
-    info: logs.filter(l => l.level === 'info').length,
-    warn: logs.filter(l => l.level === 'warn').length,
-    error: logs.filter(l => l.level === 'error').length,
-    critical: logs.filter(l => l.level === 'critical').length
-  };
+  const logStats = [
+    {
+      label: '総ログ数',
+      value: logs.length,
+      icon: FileText,
+      gradient: 'from-gray-600 to-slate-700'
+    },
+    {
+      label: '情報',
+      value: logs.filter(l => (l as any).level === 'info').length,
+      icon: Info,
+      gradient: 'from-blue-500 to-blue-600'
+    },
+    {
+      label: '警告',
+      value: logs.filter(l => (l as any).level === 'warn').length,
+      icon: AlertTriangle,
+      gradient: 'from-yellow-500 to-yellow-600'
+    },
+    {
+      label: 'エラー',
+      value: logs.filter(l => (l as any).level === 'error').length,
+      icon: XCircle,
+      gradient: 'from-red-500 to-red-600'
+    },
+    {
+      label: '重大',
+      value: logs.filter(l => (l as any).level === 'critical').length,
+      icon: XCircle,
+      gradient: 'from-red-600 to-red-700'
+    }
+  ];
 
   if (loading) {
     return (
@@ -214,10 +220,7 @@ export default function LogsPage() {
           <AppHeader title="ログ管理" />
           <main className="px-4 sm:px-6 lg:px-8 py-8">
             <div className="flex items-center justify-center min-h-64">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-600 border-t-transparent mx-auto mb-4"></div>
-                <p className="text-gray-600">ログデータを読み込み中...</p>
-              </div>
+              <LoadingSpinner text="ログデータを読み込み中..." size="lg" />
             </div>
           </main>
         </div>
@@ -234,22 +237,16 @@ export default function LogsPage() {
           <div className="max-w-7xl mx-auto space-y-8">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-gray-600 to-slate-700 rounded-2xl shadow-xl p-8 text-white">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-gray-800/50 rounded-2xl">
-                    <FileText className="h-10 w-10 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold">ログ管理</h1>
-                    <p className="text-gray-100 mt-2 text-lg">
-                      システムログとエラー監視・アクティビティ追跡
-                    </p>
-                  </div>
-                </div>
+            <GradientHeader
+              title="ログ管理"
+              subtitle="システムログとエラー監視・アクティビティ追跡"
+              icon={FileText}
+              gradient="from-gray-600 to-slate-700"
+              iconBackground="from-gray-800 to-gray-900"
+              actions={
                 <div className="flex space-x-2">
-                  <button 
-                    onClick={fetchLogs}
+                  <button
+                    onClick={refreshLogs}
                     className="inline-flex items-center px-4 py-2 bg-gray-800/50 text-white rounded-lg hover:bg-gray-700/50 transition-all duration-200"
                   >
                     <RefreshCw className="h-4 w-4 mr-2" />
@@ -260,41 +257,22 @@ export default function LogsPage() {
                     エクスポート
                   </button>
                 </div>
-              </div>
-            </div>
+              }
+            />
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600">総ログ数</p>
-                  <p className="text-2xl font-bold text-gray-900">{logStats.total}</p>
-                </div>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600">情報</p>
-                  <p className="text-2xl font-bold text-blue-600">{logStats.info}</p>
-                </div>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600">警告</p>
-                  <p className="text-2xl font-bold text-yellow-600">{logStats.warn}</p>
-                </div>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600">エラー</p>
-                  <p className="text-2xl font-bold text-red-600">{logStats.error}</p>
-                </div>
-              </div>
-              <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-                <div className="text-center">
-                  <p className="text-sm font-medium text-gray-600">重大</p>
-                  <p className="text-2xl font-bold text-red-700">{logStats.critical}</p>
-                </div>
-              </div>
+              {logStats.map((stat, index) => (
+                <StatCard
+                  key={index}
+                  label={stat.label}
+                  value={stat.value}
+                  icon={stat.icon}
+                  gradient={stat.gradient}
+                  size="sm"
+                  className="text-center"
+                />
+              ))}
             </div>
 
             {/* Filters */}
@@ -391,11 +369,38 @@ export default function LogsPage() {
                           {log.details && (
                             <div className="text-xs text-gray-500">
                               <span className="font-medium">詳細: </span>
-                              {Object.entries(log.details).map(([key, value]) => (
-                                <span key={key} className="mr-3">
-                                  {key}: {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                </span>
-                              ))}
+                              {(() => {
+                                try {
+                                  if (typeof log.details === 'object' && log.details !== null) {
+                                    return Object.entries(log.details).map(([key, value]) => {
+                                      let displayValue;
+                                      try {
+                                        if (value === null) {
+                                          displayValue = 'null';
+                                        } else if (value === undefined) {
+                                          displayValue = 'undefined';
+                                        } else if (typeof value === 'object') {
+                                          displayValue = JSON.stringify(value, null, 0);
+                                        } else {
+                                          displayValue = String(value);
+                                        }
+                                      } catch (e) {
+                                        displayValue = '[オブジェクト]';
+                                      }
+                                      
+                                      return (
+                                        <span key={key} className="mr-3">
+                                          {String(key)}: {displayValue}
+                                        </span>
+                                      );
+                                    });
+                                  } else {
+                                    return <span>詳細データなし</span>;
+                                  }
+                                } catch (error) {
+                                  return <span>詳細表示エラー</span>;
+                                }
+                              })()}
                             </div>
                           )}
                         </div>

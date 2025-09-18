@@ -3,9 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import DashboardLayout from '@/components/layout/DashboardLayout';
+import AppHeader from '@/components/layout/AppHeader';
 import { 
-  Users, 
   Search,
   Edit,
   Mail,
@@ -91,9 +90,9 @@ export default function ManagerStaffPage() {
 
   const getRoleBadgeColor = (role: UserRole) => {
     switch (role) {
-      case 'root': return 'bg-gray-800 text-white';
-      case 'manager': return 'bg-gray-600 text-white';
-      case 'staff': return 'bg-gray-400 text-white';
+      case 'root': return 'bg-red-600 text-white';
+      case 'manager': return 'bg-blue-600 text-white';
+      case 'staff': return 'bg-green-600 text-white';
       default: return 'bg-gray-200 text-gray-800';
     }
   };
@@ -156,14 +155,17 @@ export default function ManagerStaffPage() {
   if (loading) {
     return (
       <ProtectedRoute allowedRoles={['root', 'manager']}>
-        <DashboardLayout>
-          <div className="flex items-center justify-center min-h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-purple-600 border-t-transparent mx-auto mb-4"></div>
-              <p className="text-gray-600">スタッフデータを読み込み中...</p>
+        <div className="h-screen overflow-hidden bg-gray-50">
+          <AppHeader title="スタッフ管理" />
+          <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+            <div className="flex items-center justify-center min-h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+                <p className="text-gray-600">スタッフデータを読み込み中...</p>
+              </div>
             </div>
-          </div>
-        </DashboardLayout>
+          </main>
+        </div>
       </ProtectedRoute>
     );
   }
@@ -171,76 +173,62 @@ export default function ManagerStaffPage() {
   if (error) {
     return (
       <ProtectedRoute allowedRoles={['root', 'manager']}>
-        <DashboardLayout>
-          <div className="flex items-center justify-center min-h-64">
-            <div className="text-center">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-                <p className="text-red-800 font-medium">エラーが発生しました</p>
-                <p className="text-red-700 text-sm mt-1">{error}</p>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                >
-                  再読み込み
-                </button>
+        <div className="h-screen overflow-hidden bg-gray-50">
+          <AppHeader title="スタッフ管理" />
+          <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+            <div className="flex items-center justify-center min-h-64">
+              <div className="text-center">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                  <p className="text-red-800 font-medium">エラーが発生しました</p>
+                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  >
+                    再読み込み
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        </DashboardLayout>
+          </main>
+        </div>
       </ProtectedRoute>
     );
   }
 
   return (
     <ProtectedRoute allowedRoles={['root', 'manager']}>
-      <DashboardLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-gray-800 to-gray-700 rounded-lg shadow-lg p-6 text-white">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="p-3 bg-gray-600 rounded-full">
-                  <Users className="h-8 w-8 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold">スタッフ管理</h1>
-                  <p className="text-gray-200 mt-1">
-                    店舗スタッフの情報管理・スケジュール調整
-                  </p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-gray-300">総スタッフ数</p>
-                <p className="text-3xl font-bold">{staff.length}名</p>
-              </div>
-            </div>
-          </div>
+      <div className="h-screen overflow-hidden bg-gray-50">
+        <AppHeader title="スタッフ管理" />
+        
+        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Modern Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white/90 backdrop-blur-sm border border-gray-200/50 rounded-2xl shadow-sm p-6 hover:shadow-md transition-all duration-200">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">正社員</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">マネージャー</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {staff.filter(s => s.employmentType === 'full-time').length}名
+                    {staff.filter(s => s.role === 'manager').length}名
                   </p>
                 </div>
-                <div className="p-3 bg-gray-100 rounded-2xl">
-                  <UserCheck className="h-6 w-6 text-gray-700" />
+                <div className="p-3 bg-blue-100 rounded-2xl">
+                  <UserCheck className="h-6 w-6 text-blue-600" />
                 </div>
               </div>
             </div>
             <div className="bg-white/90 backdrop-blur-sm border border-gray-200/50 rounded-2xl shadow-sm p-6 hover:shadow-md transition-all duration-200">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600 mb-1">アルバイト</p>
+                  <p className="text-sm font-medium text-gray-600 mb-1">スタッフ</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {staff.filter(s => s.employmentType === 'part-time').length}名
+                    {staff.filter(s => s.role === 'staff').length}名
                   </p>
                 </div>
-                <div className="p-3 bg-gray-100 rounded-2xl">
-                  <Clock className="h-6 w-6 text-gray-700" />
+                <div className="p-3 bg-green-100 rounded-2xl">
+                  <Clock className="h-6 w-6 text-green-600" />
                 </div>
               </div>
             </div>
@@ -252,8 +240,8 @@ export default function ManagerStaffPage() {
                     ¥{staff.length > 0 ? Math.round(staff.reduce((sum, s) => sum + (s.hourlyRate || 0), 0) / staff.length).toLocaleString() : '0'}
                   </p>
                 </div>
-                <div className="p-3 bg-gray-100 rounded-2xl">
-                  <Badge className="h-6 w-6 text-gray-700" />
+                <div className="p-3 bg-yellow-100 rounded-2xl">
+                  <Badge className="h-6 w-6 text-yellow-600" />
                 </div>
               </div>
             </div>
@@ -265,8 +253,8 @@ export default function ManagerStaffPage() {
                     {staff.reduce((sum, s) => sum + (s.maxHoursPerWeek || 0), 0)}h/週
                   </p>
                 </div>
-                <div className="p-3 bg-gray-100 rounded-2xl">
-                  <Calendar className="h-6 w-6 text-gray-700" />
+                <div className="p-3 bg-purple-100 rounded-2xl">
+                  <Calendar className="h-6 w-6 text-purple-600" />
                 </div>
               </div>
             </div>
@@ -277,13 +265,13 @@ export default function ManagerStaffPage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex-1">
                 <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 transition-colors group-focus-within:text-gray-600" />
+                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 transition-colors group-focus-within:text-blue-600" />
                   <input
                     type="text"
                     placeholder="スタッフ名またはメールアドレスで検索..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-gray-300/50 focus:outline-none transition-all duration-200 text-gray-900 placeholder-gray-500"
+                    className="w-full pl-12 pr-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-900 placeholder-gray-500"
                   />
                 </div>
               </div>
@@ -291,7 +279,7 @@ export default function ManagerStaffPage() {
                 <select
                   value={filterRole}
                   onChange={(e) => setFilterRole(e.target.value as 'all' | UserRole)}
-                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-gray-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
+                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
                 >
                   <option value="all">全ての役職</option>
                   <option value="staff">スタッフ</option>
@@ -300,7 +288,7 @@ export default function ManagerStaffPage() {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as 'name' | 'role' | 'created')}
-                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-gray-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
+                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
                 >
                   <option value="name">名前順</option>
                   <option value="role">役職順</option>
@@ -324,7 +312,7 @@ export default function ManagerStaffPage() {
                 <div key={member.uid} className="p-4 border-b border-gray-100/50 last:border-b-0">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center">
-                      <div className="h-12 w-12 rounded-2xl bg-gradient-to-r from-gray-600 to-gray-700 flex items-center justify-center shadow-sm">
+                      <div className="h-12 w-12 rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
                         <span className="text-base font-medium text-white">
                           {member.name.charAt(0)}
                         </span>
@@ -336,7 +324,7 @@ export default function ManagerStaffPage() {
                     </div>
                     <button
                       onClick={() => handleEditStaff(member)}
-                      className="p-2 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 transition-colors"
+                      className="p-2 bg-blue-100 text-blue-600 rounded-xl hover:bg-blue-200 transition-colors"
                     >
                       <Edit className="h-4 w-4" />
                     </button>
@@ -395,7 +383,7 @@ export default function ManagerStaffPage() {
                     <tr key={member.uid} className="hover:bg-gray-50/50 transition-colors duration-150">
                       <td className="px-6 py-5 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-r from-gray-600 to-gray-700 flex items-center justify-center shadow-sm">
+                          <div className="h-12 w-12 rounded-2xl bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
                             <span className="text-base font-medium text-white">
                               {member.name.charAt(0)}
                             </span>
@@ -441,7 +429,7 @@ export default function ManagerStaffPage() {
                       <td className="px-6 py-5 whitespace-nowrap">
                         <button
                           onClick={() => handleEditStaff(member)}
-                          className="inline-flex items-center px-4 py-2 bg-gray-800 text-white text-sm font-medium rounded-xl hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-500/30 focus:ring-offset-2 transition-all duration-150 shadow-sm hover:shadow-md"
+                          className="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:ring-offset-2 transition-all duration-150 shadow-sm hover:shadow-md"
                         >
                           <Edit className="h-4 w-4 mr-1.5" />
                           編集
@@ -479,8 +467,9 @@ export default function ManagerStaffPage() {
               </div>
             </div>
           )}
-        </div>
-      </DashboardLayout>
+          </div>
+        </main>
+      </div>
     </ProtectedRoute>
   );
 }
@@ -545,7 +534,7 @@ function StaffEditForm({
             type="text"
             value={formData.name}
             onChange={(e) => handleChange('name', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-gray-500 focus:border-gray-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             placeholder="山田 太郎"
           />
         </div>
@@ -559,7 +548,7 @@ function StaffEditForm({
             type="text"
             value={formData.nameKana}
             onChange={(e) => handleChange('nameKana', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-gray-500 focus:border-gray-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             placeholder="ヤマダ タロウ"
           />
         </div>
@@ -573,7 +562,7 @@ function StaffEditForm({
             type="text"
             value={formData.displayName}
             onChange={(e) => handleChange('displayName', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-gray-500 focus:border-gray-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             placeholder="太郎"
           />
         </div>
@@ -587,7 +576,7 @@ function StaffEditForm({
             type="text"
             value={formData.position}
             onChange={(e) => handleChange('position', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-gray-500 focus:border-gray-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             placeholder="接客スタッフ"
           />
         </div>
@@ -636,7 +625,7 @@ function StaffEditForm({
           <select
             value={formData.gender}
             onChange={(e) => handleChange('gender', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-gray-500 focus:border-gray-500"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="not_specified">選択しない</option>
             <option value="male">男性</option>
@@ -669,14 +658,14 @@ function StaffEditForm({
           type="button"
           onClick={onCancel}
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
         >
           キャンセル
         </button>
         <button
           type="submit"
           disabled={loading}
-          className="px-4 py-2 text-sm font-medium text-white bg-gray-800 border border-transparent rounded-md hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 flex items-center"
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 flex items-center"
         >
           {loading && (
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>

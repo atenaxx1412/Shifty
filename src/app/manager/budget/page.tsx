@@ -3,28 +3,26 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import Link from 'next/link';
+import AppHeader from '@/components/layout/AppHeader';
 import { 
   TrendingUp, 
   Banknote, 
   Calendar,
   Users,
   Clock,
-  ArrowLeft,
-  Download,
   AlertTriangle,
   Target,
   BarChart3,
-  PieChart
+  PieChart,
+  ArrowLeft
 } from 'lucide-react';
-import { format, addDays, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { budgetService } from '@/lib/budgetService';
 import { ShiftManagementService } from '@/lib/shiftService';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { BudgetCalculation } from '@/types';
+import { BudgetCalculation, User } from '@/types';
 import BudgetDetailsModal from '@/components/budget/BudgetDetailsModal';
 
 export default function ManagerBudgetPage() {
@@ -34,7 +32,8 @@ export default function ManagerBudgetPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [budgetLimit, setBudgetLimit] = useState(1000000); // 100万円のデフォルト予算
+  const [budgetLimit] = useState(1000000); // 100万円のデフォルト予算
+  // const [, setBudgetLimit] = useState(1000000); // 予算設定機能用（将来実装予定）
 
   // 月の開始・終了日
   const monthStart = startOfMonth(selectedDate);
@@ -64,14 +63,16 @@ export default function ManagerBudgetPage() {
       
       const staff = staffSnapshot.docs.map(doc => ({
         uid: doc.data().uid,
-        id: doc.id,
+        userId: doc.data().userId || doc.id,
+        password: doc.data().password || '',
         name: doc.data().name,
-        email: doc.data().email,
         role: doc.data().role,
         shopId: doc.data().shopId,
         hourlyRate: doc.data().hourlyRate || 1000,
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
         ...doc.data()
-      }));
+      })) as User[];
       
       console.log('👥 Retrieved staff:', staff.length);
       
@@ -130,75 +131,46 @@ export default function ManagerBudgetPage() {
 
   if (loading && !budgetData) {
     return (
-      <ProtectedRoute allowedRoles={['root', 'manager']}>
-        <DashboardLayout>
-          <div className="flex items-center justify-center min-h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
-              <p className="text-gray-600">予算データを読み込み中...</p>
+      <ProtectedRoute requiredRoles={['root', 'manager']}>
+        <div className="h-screen overflow-hidden bg-gray-50">
+          <AppHeader title="予算管理" />
+          <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+            <div className="flex items-center justify-center min-h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+                <p className="text-blue-600">予算データを読み込み中...</p>
+              </div>
             </div>
-          </div>
-        </DashboardLayout>
+          </main>
+        </div>
       </ProtectedRoute>
     );
   }
 
   return (
-    <ProtectedRoute allowedRoles={['root', 'manager']}>
-      <DashboardLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="flex items-center space-x-4">
-              <Link 
-                href="/manager" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-600" />
-              </Link>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">予算管理</h1>
-                <p className="text-gray-600">
-                  人件費と予算の分析・管理
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-3">
-              <div className="flex items-center space-x-2">
-                <label className="text-sm text-gray-600">月間予算:</label>
-                <input
-                  type="number"
-                  value={budgetLimit}
-                  onChange={(e) => setBudgetLimit(Number(e.target.value))}
-                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-                <span className="text-sm text-gray-600">円</span>
-              </div>
-              <button className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors">
-                <Download className="h-4 w-4" />
-                <span>レポート出力</span>
-              </button>
-            </div>
-          </div>
+    <ProtectedRoute requiredRoles={['root', 'manager']}>
+      <div className="h-screen overflow-hidden bg-gray-50">
+        <AppHeader title="予算管理" />
+        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-6">
 
           {/* Month Navigation */}
           <div className="flex items-center justify-between bg-white rounded-lg shadow p-4">
             <div className="flex items-center space-x-4">
               <button
                 onClick={() => changeMonth('prev')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
               
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-blue-900">
                 {format(selectedDate, 'yyyy年M月', { locale: ja })}
               </h2>
               
               <button
                 onClick={() => changeMonth('next')}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
               >
                 <ArrowLeft className="h-5 w-5 rotate-180" />
               </button>
@@ -219,7 +191,7 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">月間予算</p>
+                      <p className="text-sm font-medium text-blue-600">月間予算</p>
                       <p className="text-2xl font-bold text-blue-600">
                         ¥{(budgetData.summary.budgetLimit || budgetLimit).toLocaleString()}
                       </p>
@@ -231,7 +203,7 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">実際使用額</p>
+                      <p className="text-sm font-medium text-green-600">実際使用額</p>
                       <p className="text-2xl font-bold text-green-600">
                         ¥{budgetData.summary.totalCost.toLocaleString()}
                       </p>
@@ -248,7 +220,7 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">予想総額</p>
+                      <p className="text-sm font-medium text-orange-600">予想総額</p>
                       <p className="text-2xl font-bold text-orange-600">
                         ¥{budgetData.summary.totalCost.toLocaleString()}
                       </p>
@@ -268,7 +240,7 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">残り予算</p>
+                      <p className="text-sm font-medium text-purple-600">残り予算</p>
                       <p className="text-2xl font-bold text-purple-600">
                         ¥{(budgetData.summary.budgetVariance >= 0 ? budgetData.summary.budgetVariance : 0).toLocaleString()}
                       </p>
@@ -283,30 +255,30 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">総シフト数</p>
-                      <p className="text-2xl font-bold text-gray-900">{budgetData.summary.totalShifts}コマ</p>
+                      <p className="text-sm font-medium text-blue-600">総シフト数</p>
+                      <p className="text-2xl font-bold text-blue-900">{budgetData.summary.totalShifts}コマ</p>
                     </div>
-                    <Users className="h-8 w-8 text-gray-500" />
+                    <Users className="h-8 w-8 text-blue-500" />
                   </div>
                 </div>
                 
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">総労働時間</p>
-                      <p className="text-2xl font-bold text-gray-900">{budgetData.summary.totalHours.toFixed(0)}時間</p>
+                      <p className="text-sm font-medium text-green-600">総労働時間</p>
+                      <p className="text-2xl font-bold text-green-900">{budgetData.summary.totalHours.toFixed(0)}時間</p>
                     </div>
-                    <Clock className="h-8 w-8 text-gray-500" />
+                    <Clock className="h-8 w-8 text-green-500" />
                   </div>
                 </div>
                 
                 <div className="bg-white rounded-lg shadow p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-gray-600">平均時給</p>
-                      <p className="text-2xl font-bold text-gray-900">¥{Math.round(budgetData.summary.totalBaseCost / budgetData.summary.totalHours).toLocaleString()}</p>
+                      <p className="text-sm font-medium text-purple-600">平均時給</p>
+                      <p className="text-2xl font-bold text-purple-900">¥{Math.round(budgetData.summary.totalBaseCost / budgetData.summary.totalHours).toLocaleString()}</p>
                     </div>
-                    <BarChart3 className="h-8 w-8 text-gray-500" />
+                    <BarChart3 className="h-8 w-8 text-purple-500" />
                   </div>
                 </div>
               </div>
@@ -314,7 +286,7 @@ export default function ManagerBudgetPage() {
               {/* Cost Categories */}
               <div className="bg-white rounded-lg shadow p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-semibold text-gray-900">コスト内訳</h3>
+                  <h3 className="text-lg font-semibold text-blue-900">コスト内訳</h3>
                   <button
                     onClick={() => setShowDetailsModal(true)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -331,22 +303,22 @@ export default function ManagerBudgetPage() {
                     ['bonuses', budgetData.summary.totalBonusCost, '各種手当'],
                     ['taxAndInsurance', budgetData.summary.totalTaxAndInsurance, '税金・保険']
                   ].map(([category, amount, label]) => {
-                    const percentage = (amount / budgetData.summary.totalCost) * 100;
+                    const percentage = (Number(amount) / budgetData.summary.totalCost) * 100;
                     
                     return (
-                      <div key={category} className="p-4 border border-gray-200 rounded-lg">
+                      <div key={category} className="p-4 border border-blue-200 rounded-lg">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-gray-700">
+                          <span className="text-sm font-medium text-blue-700">
                             {label}
                           </span>
-                          <span className="text-sm text-gray-500">
+                          <span className="text-sm text-blue-500">
                             {percentage.toFixed(1)}%
                           </span>
                         </div>
-                        <p className="text-lg font-bold text-gray-900">
+                        <p className="text-lg font-bold text-blue-900">
                           ¥{amount.toLocaleString()}
                         </p>
-                        <div className="mt-2 bg-gray-200 rounded-full h-2">
+                        <div className="mt-2 bg-blue-200 rounded-full h-2">
                           <div 
                             className="bg-blue-600 rounded-full h-2" 
                             style={{ width: `${Math.min(percentage, 100)}%` }}
@@ -363,7 +335,7 @@ export default function ManagerBudgetPage() {
                 <div className="bg-white rounded-lg shadow p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">リスク要因</h3>
                   <div className="space-y-3">
-                    {[].map((risk, index) => (
+                    {([] as { factor: string; description: string; estimatedCost: number }[]).map((risk, index) => (
                       <div key={index} className="p-4 bg-red-50 border border-red-200 rounded-lg">
                         <div className="flex items-start space-x-3">
                           <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5" />
@@ -418,17 +390,18 @@ export default function ManagerBudgetPage() {
               </div>
             </div>
           )}
-        </div>
+          </div>
 
-        {/* Budget Details Modal */}
-        {showDetailsModal && budgetData && (
-          <BudgetDetailsModal
-            isOpen={showDetailsModal}
-            budgetCalculation={budgetData}
-            onClose={() => setShowDetailsModal(false)}
-          />
-        )}
-      </DashboardLayout>
+          {/* Budget Details Modal */}
+          {showDetailsModal && budgetData && (
+            <BudgetDetailsModal
+              isOpen={showDetailsModal}
+              budgetCalculation={budgetData}
+              onClose={() => setShowDetailsModal(false)}
+            />
+          )}
+        </main>
+      </div>
     </ProtectedRoute>
   );
 }

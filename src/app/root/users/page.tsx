@@ -4,10 +4,10 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { 
-  Users, 
-  UserPlus, 
-  Search, 
+import {
+  Users,
+  UserPlus,
+  Search,
   Filter,
   Edit,
   Trash2,
@@ -24,6 +24,10 @@ import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, query, where } 
 import { db } from '@/lib/firebase';
 import { User, UserRole } from '@/types';
 import { logUserAction, logDataChange } from '@/lib/auditLogger';
+import StatCard from '@/components/ui/StatCard';
+import GradientHeader from '@/components/ui/GradientHeader';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+import { useFirebaseData } from '@/hooks/useFirebaseData';
 
 interface UserWithId extends User {
   id: string;
@@ -31,35 +35,19 @@ interface UserWithId extends User {
 
 export default function UsersPage() {
   const { currentUser } = useAuth();
-  const [users, setUsers] = useState<UserWithId[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserWithId[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [editingUser, setEditingUser] = useState<UserWithId | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // Fetch all users from Firestore
-  const fetchUsers = async () => {
-    try {
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const usersData = usersSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as UserWithId[];
-      
-      setUsers(usersData);
-      setFilteredUsers(usersData);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Use the custom hook for users data
+  const { data: users, loading, refresh: refreshUsers } = useFirebaseData<UserWithId>('users');
 
+  // Initialize filtered users when users data changes
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    setFilteredUsers(users);
+  }, [users]);
 
   // Filter users based on search and role
   useEffect(() => {
@@ -123,7 +111,7 @@ export default function UsersPage() {
         );
       }
 
-      await fetchUsers();
+      await refreshUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
       alert('ユーザーの削除に失敗しました');
@@ -160,12 +148,36 @@ export default function UsersPage() {
     );
   };
 
-  const userStats = {
-    total: users.length,
-    root: users.filter(u => u.role === 'root').length,
-    manager: users.filter(u => u.role === 'manager').length,
-    staff: users.filter(u => u.role === 'staff').length
-  };
+  const userStats = [
+    {
+      label: '総ユーザー数',
+      value: users.length,
+      unit: '人',
+      icon: Users,
+      gradient: 'from-slate-600 to-slate-700'
+    },
+    {
+      label: 'システム管理者',
+      value: users.filter(u => u.role === 'root').length,
+      unit: '人',
+      icon: ShieldCheck,
+      gradient: 'from-rose-500 to-pink-600'
+    },
+    {
+      label: '店長',
+      value: users.filter(u => u.role === 'manager').length,
+      unit: '人',
+      icon: UserCheck,
+      gradient: 'from-amber-500 to-orange-500'
+    },
+    {
+      label: 'スタッフ',
+      value: users.filter(u => u.role === 'staff').length,
+      unit: '人',
+      icon: Users,
+      gradient: 'from-emerald-500 to-teal-600'
+    }
+  ];
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
@@ -176,22 +188,14 @@ export default function UsersPage() {
           <div className="max-w-7xl mx-auto space-y-8">
             
             {/* Header */}
-            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg">
-                    <Users className="h-10 w-10 text-white" />
-                  </div>
-                  <div>
-                    <h1 className="text-3xl font-bold text-slate-800">ユーザー管理</h1>
-                    <p className="text-slate-600 mt-2 text-lg">
-                      システムユーザーの管理・権限設定・アクセス制御
-                    </p>
-                  </div>
-                </div>
+            <GradientHeader
+              title="ユーザー管理"
+              subtitle="システムユーザーの管理・権限設定・アクセス制御"
+              icon={Users}
+              actions={
                 <div className="flex space-x-3">
-                  <button 
-                    onClick={fetchUsers}
+                  <button
+                    onClick={refreshUsers}
                     className="inline-flex items-center px-4 py-2.5 bg-slate-700/50 backdrop-blur-sm text-white rounded-xl hover:bg-slate-600/50 transition-all duration-200 border border-slate-600/30"
                   >
                     <Activity className="h-4 w-4 mr-2" />
@@ -205,58 +209,22 @@ export default function UsersPage() {
                     </p>
                   </div>
                 </div>
-              </div>
-            </div>
+              }
+            />
             
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600">総ユーザー数</p>
-                    <p className="text-3xl font-bold text-slate-900">{userStats.total}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 shadow-lg">
-                    <Users className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600">システム管理者</p>
-                    <p className="text-3xl font-bold text-rose-600">{userStats.root}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-rose-500 to-pink-600 shadow-lg">
-                    <ShieldCheck className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600">店長</p>
-                    <p className="text-3xl font-bold text-amber-600">{userStats.manager}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 shadow-lg">
-                    <UserCheck className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600">スタッフ</p>
-                    <p className="text-3xl font-bold text-emerald-600">{userStats.staff}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
-                    <Users className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-              </div>
+              {userStats.map((stat, index) => (
+                <StatCard
+                  key={index}
+                  label={stat.label}
+                  value={stat.value}
+                  unit={stat.unit}
+                  icon={stat.icon}
+                  gradient={stat.gradient}
+                  size="md"
+                />
+              ))}
             </div>
 
             {/* Search and Filter Bar */}
@@ -300,9 +268,8 @@ export default function UsersPage() {
               </div>
               
               {loading ? (
-                <div className="px-6 py-12 text-center">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <p className="mt-2 text-gray-500">読み込み中...</p>
+                <div className="px-6 py-12">
+                  <LoadingSpinner text="ユーザーデータを読み込み中..." size="md" />
                 </div>
               ) : (
                 <div className="space-y-3">

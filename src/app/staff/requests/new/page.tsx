@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import AppHeader from '@/components/layout/AppHeader';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { 
-  Calendar, 
-  Clock, 
+import {
+  Calendar,
+  Clock,
   ArrowLeft,
   Plus,
   Minus,
@@ -16,30 +17,37 @@ import {
   Users,
   Save,
   Send,
-  Lightbulb
+  Lightbulb,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
-import { format, addDays, startOfWeek, addWeeks, isSameDay } from 'date-fns';
+import { format, addDays, startOfWeek, addWeeks, isSameDay, startOfMonth, endOfMonth, getDaysInMonth, addMonths, endOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
+import { MonthlyShiftRequest, DayShiftRequest } from '@/types';
+import { shiftRequestService } from '@/lib/shiftRequestService';
 
-interface TimeSlot {
-  start: string;
-  end: string;
-}
-
-interface ShiftRequest {
+interface CalendarCell {
   date: Date;
-  timeSlots: TimeSlot[];
-  preference: 'preferred' | 'available' | 'unavailable';
-  note: string;
-  positions?: string[];
+  dayRequests: DayShiftRequest[];
+  isCurrentMonth: boolean;
+  isToday: boolean;
 }
 
 export default function NewShiftRequestPage() {
   const { currentUser } = useAuth();
-  const [selectedWeek, setSelectedWeek] = useState(0);
-  const [requests, setRequests] = useState<ShiftRequest[]>([]);
-  const [currentRequest, setCurrentRequest] = useState<ShiftRequest>({
-    date: addDays(new Date(), 7),
+
+  // 来月を初期表示
+  const [currentMonth, setCurrentMonth] = useState(addMonths(new Date(), 1));
+  const [monthlyRequest, setMonthlyRequest] = useState<Partial<MonthlyShiftRequest>>({
+    title: '',
+    dayRequests: [],
+    overallNote: '',
+    status: 'draft'
+  });
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [showDayModal, setShowDayModal] = useState(false);
+  const [currentDayRequest, setCurrentDayRequest] = useState<DayShiftRequest>({
+    date: new Date(),
     timeSlots: [{ start: '09:00', end: '17:00' }],
     preference: 'preferred',
     note: '',
@@ -47,6 +55,7 @@ export default function NewShiftRequestPage() {
   });
   const [showAIRecommendations, setShowAIRecommendations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // 利用可能なポジション
   const availablePositions = [
@@ -67,71 +76,163 @@ export default function NewShiftRequestPage() {
     conflictingRequests: 2,
     approvalProbability: 0.78,
     alternativeSlots: [
-      { date: addDays(currentRequest.date, 1), time: '10:00-16:00', score: 0.72 }
+      { date: addDays(new Date(), 1), time: '10:00-16:00', score: 0.72 }
     ]
   };
 
-  // 週の日付を生成
-  const weekStart = addWeeks(startOfWeek(new Date()), selectedWeek + 1);
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // カレンダー表示用の関数
+  const getCalendarWeeks = () => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    const startDate = startOfWeek(monthStart, { locale: ja, weekStartsOn: 1 }); // 月曜日始まり
+    const endDate = endOfWeek(monthEnd, { locale: ja, weekStartsOn: 1 });
+
+    const weeks: Date[][] = [];
+    const currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      const week: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        week.push(new Date(currentDate));
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      weeks.push(week);
+    }
+
+    return weeks;
+  };
+
+  // 指定日の既存リクエストを取得
+  const getDayRequest = (date: Date): DayShiftRequest | undefined => {
+    return monthlyRequest.dayRequests?.find(req =>
+      isSameDay(req.date, date)
+    );
+  };
+
+  // 月を変更
+  const changeMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => addMonths(prev, direction === 'next' ? 1 : -1));
+  };
+
+  // 日付クリック時の処理
+  const handleDateClick = (date: Date) => {
+    setSelectedDate(date);
+    const existingRequest = getDayRequest(date);
+    if (existingRequest) {
+      setCurrentDayRequest(existingRequest);
+    } else {
+      setCurrentDayRequest({
+        date,
+        timeSlots: [{ start: '09:00', end: '17:00' }],
+        preference: 'preferred',
+        note: '',
+        positions: []
+      });
+    }
+    setShowDayModal(true);
+  };
 
   const addTimeSlot = () => {
-    setCurrentRequest(prev => ({
+    setCurrentDayRequest(prev => ({
       ...prev,
       timeSlots: [...prev.timeSlots, { start: '09:00', end: '17:00' }]
     }));
   };
 
   const removeTimeSlot = (index: number) => {
-    setCurrentRequest(prev => ({
+    setCurrentDayRequest(prev => ({
       ...prev,
       timeSlots: prev.timeSlots.filter((_, i) => i !== index)
     }));
   };
 
   const updateTimeSlot = (index: number, field: 'start' | 'end', value: string) => {
-    setCurrentRequest(prev => ({
+    setCurrentDayRequest(prev => ({
       ...prev,
-      timeSlots: prev.timeSlots.map((slot, i) => 
+      timeSlots: prev.timeSlots.map((slot, i) =>
         i === index ? { ...slot, [field]: value } : slot
       )
     }));
   };
 
-  const addRequest = () => {
-    if (currentRequest.timeSlots.length === 0) return;
-    
-    setRequests(prev => [...prev, { ...currentRequest }]);
-    setCurrentRequest({
-      date: addDays(currentRequest.date, 1),
-      timeSlots: [{ start: '09:00', end: '17:00' }],
-      preference: 'preferred',
-      note: '',
-      positions: []
+  // 日の希望を保存
+  const saveDayRequest = () => {
+    if (currentDayRequest.timeSlots.length === 0) return;
+
+    setMonthlyRequest(prev => {
+      const newDayRequests = [...(prev.dayRequests || [])];
+      const existingIndex = newDayRequests.findIndex(req =>
+        isSameDay(req.date, currentDayRequest.date)
+      );
+
+      if (existingIndex >= 0) {
+        newDayRequests[existingIndex] = currentDayRequest;
+      } else {
+        newDayRequests.push(currentDayRequest);
+      }
+
+      return {
+        ...prev,
+        dayRequests: newDayRequests
+      };
     });
+
+    setShowDayModal(false);
   };
 
-  const removeRequest = (index: number) => {
-    setRequests(prev => prev.filter((_, i) => i !== index));
+  // 日の希望を削除
+  const removeDayRequest = (date: Date) => {
+    setMonthlyRequest(prev => ({
+      ...prev,
+      dayRequests: prev.dayRequests?.filter(req => !isSameDay(req.date, date)) || []
+    }));
   };
 
-  const submitRequests = async () => {
-    if (requests.length === 0) return;
-    
-    setIsSubmitting(true);
-    
+  // 下書き保存
+  const saveDraft = async () => {
+    if (!currentUser) return;
+
+    setIsSaving(true);
     try {
-      // ここで実際のAPI呼び出しを行う
-      // await shiftService.submitShiftRequests(requests, currentUser);
-      
-      // サンプル実装：3秒待機してから成功メッセージ
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      alert('シフト希望を正常に提出しました！');
-      setRequests([]);
-      
+      const requestData = {
+        ...monthlyRequest,
+        managerId: currentUser.managerId || '',
+        targetMonth: format(currentMonth, 'yyyy-MM'),
+        title: monthlyRequest.title || `${format(currentMonth, 'yyyy年M月')}のシフト希望`
+      };
+
+      await shiftRequestService.createMonthlyShiftRequest(requestData, currentUser);
+      alert('下書きを保存しました');
     } catch (error) {
-      alert('エラーが発生しました。再度お試しください。');
+      console.error('下書き保存エラー:', error);
+      alert('保存に失敗しました');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // 提出
+  const submitRequest = async () => {
+    if (!currentUser || !monthlyRequest.dayRequests?.length) return;
+
+    setIsSubmitting(true);
+    try {
+      const requestData = {
+        ...monthlyRequest,
+        managerId: currentUser.managerId || '',
+        targetMonth: format(currentMonth, 'yyyy-MM'),
+        title: monthlyRequest.title || `${format(currentMonth, 'yyyy年M月')}のシフト希望`,
+        status: 'submitted' as const
+      };
+
+      const result = await shiftRequestService.createMonthlyShiftRequest(requestData, currentUser);
+      await shiftRequestService.submitMonthlyShiftRequest(result.monthlyRequestId, currentUser);
+
+      alert('シフト希望を提出しました！');
+      setMonthlyRequest({ title: '', dayRequests: [], overallNote: '', status: 'draft' });
+    } catch (error) {
+      console.error('提出エラー:', error);
+      alert('提出に失敗しました');
     } finally {
       setIsSubmitting(false);
     }
@@ -163,63 +264,17 @@ export default function NewShiftRequestPage() {
     }
   };
 
+  const isCurrentMonthDate = (date: Date) => {
+    return date.getMonth() === currentMonth.getMonth() && date.getFullYear() === currentMonth.getFullYear();
+  };
+
   return (
     <ProtectedRoute allowedRoles={['root', 'manager', 'staff']}>
+      <AppHeader title="新規シフト希望" />
       <DashboardLayout>
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <a 
-                href="/staff/requests" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-600" />
-              </a>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">新しいシフト希望提出</h1>
-                <p className="text-gray-600">希望するシフトを複数日分まとめて提出できます</p>
-              </div>
-            </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowAIRecommendations(!showAIRecommendations)}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors flex items-center space-x-2"
-              >
-                <Brain className="h-5 w-5" />
-                <span>AI推奨</span>
-              </button>
-            </div>
-          </div>
 
-          {/* AI Recommendations */}
-          {showAIRecommendations && (
-            <div className="bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg p-6 border border-purple-200">
-              <div className="flex items-center space-x-3 mb-4">
-                <Brain className="h-6 w-6 text-purple-600" />
-                <h2 className="text-lg font-semibold text-gray-900">AI推奨シフト</h2>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-white rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <Clock className="h-5 w-5 text-green-600" />
-                    <h3 className="font-medium text-gray-900">推奨時間帯</h3>
-                  </div>
-                  {aiRecommendations.bestTimes.map((time, index) => (
-                    <div key={index} className="mb-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{time.start}-{time.end}</span>
-                        <span className="text-xs text-green-600 font-medium">
-                          {Math.round(time.score * 100)}%
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-600">{time.reason}</p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="bg-white rounded-lg p-4">
+          <div className="bg-white rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-3">
                     <Users className="h-5 w-5 text-yellow-600" />
                     <h3 className="font-medium text-gray-900">競合状況</h3>
@@ -274,222 +329,176 @@ export default function NewShiftRequestPage() {
                 </div>
               )}
             </div>
-          )}
 
-          {/* Current Request Form */}
+          {/* Month Selector */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">シフト希望入力</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  希望日
-                </label>
-                <input
-                  type="date"
-                  value={format(currentRequest.date, 'yyyy-MM-dd')}
-                  onChange={(e) => setCurrentRequest(prev => ({
-                    ...prev,
-                    date: new Date(e.target.value)
-                  }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  希望レベル
-                </label>
-                <select
-                  value={currentRequest.preference}
-                  onChange={(e) => setCurrentRequest(prev => ({
-                    ...prev,
-                    preference: e.target.value as any
-                  }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="preferred">希望 - 是非この時間で働きたい</option>
-                  <option value="available">可能 - 必要であれば勤務可能</option>
-                  <option value="unavailable">不可 - この時間は勤務不可</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Time Slots */}
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                希望時間帯
-              </label>
-              <div className="space-y-3">
-                {currentRequest.timeSlots.map((slot, index) => (
-                  <div key={index} className="flex items-center space-x-3">
-                    <input
-                      type="time"
-                      value={slot.start}
-                      onChange={(e) => updateTimeSlot(index, 'start', e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <span className="text-gray-500">〜</span>
-                    <input
-                      type="time"
-                      value={slot.end}
-                      onChange={(e) => updateTimeSlot(index, 'end', e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    {currentRequest.timeSlots.length > 1 && (
-                      <button
-                        onClick={() => removeTimeSlot(index)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Minus className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">
+                {format(currentMonth, 'yyyy年M月', { locale: ja })}のシフト希望
+              </h2>
+              <div className="flex items-center space-x-2">
                 <button
-                  onClick={addTimeSlot}
-                  className="flex items-center space-x-2 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors"
+                  onClick={() => changeMonth('prev')}
+                  className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                 >
-                  <Plus className="h-4 w-4" />
-                  <span>時間帯を追加</span>
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <button
+                  onClick={() => changeMonth('next')}
+                  className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <ChevronRight className="h-5 w-5" />
                 </button>
               </div>
             </div>
 
-            {/* Positions */}
-            <div className="mt-6">
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                希望ポジション（任意）
+            {/* Request Title */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                シフト希望タイトル
               </label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                {availablePositions.map((position) => (
-                  <label key={position} className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      checked={currentRequest.positions?.includes(position)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setCurrentRequest(prev => ({
-                            ...prev,
-                            positions: [...(prev.positions || []), position]
-                          }));
-                        } else {
-                          setCurrentRequest(prev => ({
-                            ...prev,
-                            positions: prev.positions?.filter(p => p !== position) || []
-                          }));
-                        }
-                      }}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm text-gray-700">{position}</span>
-                  </label>
+              <input
+                type="text"
+                value={monthlyRequest.title || ''}
+                onChange={(e) => setMonthlyRequest(prev => ({ ...prev, title: e.target.value }))}
+                placeholder={`${format(currentMonth, 'yyyy年M月')}のシフト希望`}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            {/* Calendar Grid */}
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              {/* Calendar Header */}
+              <div className="grid grid-cols-7 bg-gray-50">
+                {['月', '火', '水', '木', '金', '土', '日'].map((day) => (
+                  <div key={day} className="p-3 text-center text-sm font-medium text-gray-700 border-r border-gray-200 last:border-r-0">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar Body */}
+              <div className="bg-white">
+                {getCalendarWeeks().map((week, weekIndex) => (
+                  <div key={weekIndex} className="grid grid-cols-7 border-b border-gray-200 last:border-b-0">
+                    {week.map((date, dayIndex) => {
+                      const dayRequest = getDayRequest(date);
+                      const isCurrentMonthDate = date.getMonth() === currentMonth.getMonth();
+
+                      return (
+                        <div
+                          key={dayIndex}
+                          className={`p-2 border-r border-gray-200 last:border-r-0 min-h-[80px] ${
+                            isCurrentMonthDate
+                              ? 'bg-white hover:bg-blue-50 cursor-pointer'
+                              : 'bg-gray-50 text-gray-400'
+                          }`}
+                          onClick={() => isCurrentMonthDate && handleDateClick(date)}
+                        >
+                          <div className="text-sm font-medium mb-1">
+                            {format(date, 'd')}
+                          </div>
+                          {dayRequest && (
+                            <div className="space-y-1">
+                              <div className={`text-xs px-1 py-0.5 rounded ${getPreferenceColor(dayRequest.preference)}`}>
+                                {getPreferenceText(dayRequest.preference)}
+                              </div>
+                              {dayRequest.timeSlots.map((slot, slotIndex) => (
+                                <div key={slotIndex} className="text-xs text-gray-600">
+                                  {slot.start}-{slot.end}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 ))}
               </div>
             </div>
 
-            {/* Note */}
+            {/* Overall Note */}
             <div className="mt-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                備考・理由（任意）
+                全体的な備考（任意）
               </label>
               <textarea
-                value={currentRequest.note}
-                onChange={(e) => setCurrentRequest(prev => ({
-                  ...prev,
-                  note: e.target.value
-                }))}
-                placeholder="特別な要望や理由があれば記入してください"
+                value={monthlyRequest.overallNote || ''}
+                onChange={(e) => setMonthlyRequest(prev => ({ ...prev, overallNote: e.target.value }))}
+                placeholder="月全体を通しての要望や備考があれば記入してください"
                 rows={3}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            <div className="mt-6 flex justify-end">
+            {/* Summary */}
+            {monthlyRequest.dayRequests && monthlyRequest.dayRequests.length > 0 && (
+              <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <h3 className="text-sm font-medium text-blue-900 mb-2">
+                  入力済み希望日数: {monthlyRequest.dayRequests.length}日
+                </h3>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-blue-700">希望:</span>
+                    <span className="ml-1 font-medium">
+                      {monthlyRequest.dayRequests.filter(req => req.preference === 'preferred').length}日
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-green-700">可能:</span>
+                    <span className="ml-1 font-medium">
+                      {monthlyRequest.dayRequests.filter(req => req.preference === 'available').length}日
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-red-700">不可:</span>
+                    <span className="ml-1 font-medium">
+                      {monthlyRequest.dayRequests.filter(req => req.preference === 'unavailable').length}日
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="mt-6 flex justify-end space-x-3">
               <button
-                onClick={addRequest}
-                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                onClick={saveDraft}
+                disabled={isSaving}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2 disabled:opacity-50"
               >
-                <Plus className="h-5 w-5" />
-                <span>リストに追加</span>
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-500 border-t-transparent"></div>
+                    <span>保存中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-5 w-5" />
+                    <span>下書き保存</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={submitRequest}
+                disabled={isSubmitting || !monthlyRequest.dayRequests?.length}
+                className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    <span>提出中...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-5 w-5" />
+                    <span>提出する</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
-
-          {/* Requests List */}
-          {requests.length > 0 && (
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">
-                提出予定のシフト希望（{requests.length}件）
-              </h2>
-              <div className="space-y-3">
-                {requests.map((request, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-4">
-                      <div className="text-center">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {format(request.date, 'MM/dd', { locale: ja })}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {format(request.date, '(E)', { locale: ja })}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {request.timeSlots.map(slot => `${slot.start}-${slot.end}`).join(', ')}
-                        </p>
-                        <div className="flex items-center space-x-2 mt-1">
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${getPreferenceColor(request.preference)}`}>
-                            {getPreferenceText(request.preference)}
-                          </span>
-                          {request.positions && request.positions.length > 0 && (
-                            <span className="text-xs text-gray-600">
-                              {request.positions.join(', ')}
-                            </span>
-                          )}
-                        </div>
-                        {request.note && (
-                          <p className="text-xs text-gray-600 mt-1">{request.note}</p>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => removeRequest(index)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Minus className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={() => setRequests([])}
-                  className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  クリア
-                </button>
-                <button
-                  onClick={submitRequests}
-                  disabled={isSubmitting}
-                  className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                      <span>提出中...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-5 w-5" />
-                      <span>提出する</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* Help Information */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
@@ -498,15 +507,174 @@ export default function NewShiftRequestPage() {
               <div>
                 <h3 className="text-sm font-semibold text-blue-900 mb-2">提出について</h3>
                 <ul className="text-sm text-blue-800 space-y-1">
-                  <li>• シフト希望は複数日分まとめて提出できます</li>
+                  <li>• カレンダーの日付をクリックしてシフト希望を入力できます</li>
+                  <li>• 月全体のシフト希望をまとめて提出できます</li>
                   <li>• 提出後の変更は管理者の承認が必要になります</li>
                   <li>• AI推奨機能を参考に最適な時間帯を選択してください</li>
-                  <li>• 締切日を過ぎた提出は自動的に低優先度になります</li>
                 </ul>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Day Selection Modal */}
+        {showDayModal && selectedDate && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {format(selectedDate, 'M月d日(E)', { locale: ja })}のシフト希望
+                </h3>
+                <button
+                  onClick={() => setShowDayModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {/* Preference */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    希望レベル
+                  </label>
+                  <select
+                    value={currentDayRequest.preference}
+                    onChange={(e) => setCurrentDayRequest(prev => ({
+                      ...prev,
+                      preference: e.target.value as any
+                    }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="preferred">希望 - 是非この時間で働きたい</option>
+                    <option value="available">可能 - 必要であれば勤務可能</option>
+                    <option value="unavailable">不可 - この時間は勤務不可</option>
+                  </select>
+                </div>
+
+                {/* Time Slots */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    希望時間帯
+                  </label>
+                  <div className="space-y-3">
+                    {currentDayRequest.timeSlots.map((slot, index) => (
+                      <div key={index} className="flex items-center space-x-3">
+                        <input
+                          type="time"
+                          value={slot.start}
+                          onChange={(e) => updateTimeSlot(index, 'start', e.target.value)}
+                          className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-gray-500">〜</span>
+                        <input
+                          type="time"
+                          value={slot.end}
+                          onChange={(e) => updateTimeSlot(index, 'end', e.target.value)}
+                          className="border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {currentDayRequest.timeSlots.length > 1 && (
+                          <button
+                            onClick={() => removeTimeSlot(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Minus className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    <button
+                      onClick={addTimeSlot}
+                      className="flex items-center space-x-2 text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>時間帯を追加</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Positions */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    希望ポジション（任意）
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {availablePositions.map((position) => (
+                      <label key={position} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={currentDayRequest.positions?.includes(position)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setCurrentDayRequest(prev => ({
+                                ...prev,
+                                positions: [...(prev.positions || []), position]
+                              }));
+                            } else {
+                              setCurrentDayRequest(prev => ({
+                                ...prev,
+                                positions: prev.positions?.filter(p => p !== position) || []
+                              }));
+                            }
+                          }}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">{position}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    備考・理由（任意）
+                  </label>
+                  <textarea
+                    value={currentDayRequest.note}
+                    onChange={(e) => setCurrentDayRequest(prev => ({
+                      ...prev,
+                      note: e.target.value
+                    }))}
+                    placeholder="特別な要望や理由があれば記入してください"
+                    rows={3}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="mt-6 flex justify-between">
+                <button
+                  onClick={() => {
+                    if (selectedDate) {
+                      removeDayRequest(selectedDate);
+                      setShowDayModal(false);
+                    }
+                  }}
+                  className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                >
+                  削除
+                </button>
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => setShowDayModal(false)}
+                    className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={saveDayRequest}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    保存
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     </ProtectedRoute>
   );

@@ -13,6 +13,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf .next node_modules/.cache",
+    "create-test-users": "node scripts/createTestUsers.js",
     "reset": "rm -rf node_modules package-lock.json .next && npm install",
     "health": "npm ls --depth=0 && node --version && npm --version",
     "create-indexes": "tsx scripts/create-firestore-indexes.ts",
@@ -22,6 +23,7 @@
     "init-firestore": "tsx scripts/init-firestore.ts"
   },
   "dependencies": {
+    "@fontsource/noto-sans-jp": "^5.2.7",
     "@hookform/resolvers": "^3.6.0",
     "@next/swc-darwin-arm64": "^15.5.2",
     "class-variance-authority": "^0.7.0",
@@ -29,6 +31,9 @@
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.2",
     "firebase": "^11.0.0",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.2",
+    "jspdf-customfonts": "^0.0.4-rc.4",
     "lucide-react": "^0.460.0",
     "next": "15.5.2",
     "react": "19.1.0",

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
+import AppHeader from '@/components/layout/AppHeader';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { 
   Calendar, 
@@ -153,24 +154,13 @@ export default function StaffRequestsPage() {
 
   return (
     <ProtectedRoute allowedRoles={['root', 'manager', 'staff']}>
+      <AppHeader title="シフト希望履歴" />
       <DashboardLayout>
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <a 
-                href="/staff" 
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="h-6 w-6 text-gray-600" />
-              </a>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">シフト希望履歴</h1>
-                <p className="text-gray-600">提出したシフト希望の確認と管理</p>
-              </div>
-            </div>
-            <a 
-              href="/staff/requests/new" 
+          {/* Actions */}
+          <div className="flex justify-end">
+            <a
+              href="/staff/requests/new"
               className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
             >
               <Plus className="h-5 w-5" />

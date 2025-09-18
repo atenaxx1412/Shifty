@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import DashboardLayout from '@/components/layout/DashboardLayout';
+import AppHeader from '@/components/layout/AppHeader';
 import { Users, Calendar, Clock, TrendingUp, FileText, UserCheck, ArrowRight, Plus } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
@@ -81,7 +81,7 @@ export default function ManagerPage() {
 
   const managerActions = [
     { icon: Calendar, label: 'シフト管理', href: '/manager/shifts', description: 'シフト作成・編集・予算計算', color: 'bg-blue-500' },
-    { icon: Plus, label: 'シフトカレンダー', href: '/manager/shifts/calendar', description: 'カレンダービューでシフト管理', color: 'bg-green-500' },
+    { icon: Plus, label: 'シフトカレンダー', href: '/manager/calendar', description: 'カレンダービューでシフト管理', color: 'bg-green-500' },
     { icon: Users, label: 'スタッフ管理', href: '/manager/staff', description: 'スタッフの情報管理と権限設定', color: 'bg-purple-500' },
     { icon: FileText, label: 'スケジュール確認', href: '/manager/schedules', description: 'スタッフスケジュールの確認と管理', color: 'bg-yellow-500' },
     { icon: UserCheck, label: '承認管理', href: '/manager/approvals', description: 'シフト希望・交換の承認管理', color: 'bg-red-500' },
@@ -96,22 +96,25 @@ export default function ManagerPage() {
 
   return (
     <ProtectedRoute requiredRoles={['root', 'manager']}>
-      <DashboardLayout>
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-lg p-6 text-white">
-            <div className="flex items-center space-x-4">
-              <div className="p-3 bg-white bg-opacity-20 rounded-full">
-                <Users className="h-8 w-8 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">店長ダッシュボード</h1>
-                <p className="text-blue-100 mt-1">
-                  ようこそ、{currentUser?.name}さん • スタッフ管理とシフト作成権限
-                </p>
+      <div className="h-screen overflow-hidden bg-gray-50 animate-page-enter">
+        <AppHeader title="店長ダッシュボード" />
+        
+        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="max-w-7xl mx-auto space-y-4">
+            {/* Welcome Banner */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="p-3 bg-blue-100 rounded-lg">
+                    <Users className="h-6 w-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-xl font-semibold text-gray-900">{currentUser?.name}</h1>
+                    <p className="text-sm text-gray-500">店長 • スタッフ管理とシフト作成権限</p>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
 
           {/* Manager Stats */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -165,20 +168,20 @@ export default function ManagerPage() {
 
           {/* Management Actions */}
           <div className="bg-white rounded-lg shadow p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">店長機能</h2>
+            <h2 className="text-lg font-semibold text-blue-900 mb-6">店長機能</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {managerActions.map((action, index) => (
                 <Link
                   key={index}
                   href={action.href}
-                  className="group flex items-start p-4 rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors"
+                  className="group flex items-start p-4 rounded-lg border-2 border-blue-200 hover:border-blue-300 transition-colors"
                 >
                   <div className={`${action.color} p-3 rounded-full text-white mr-4 group-hover:scale-110 transition-transform`}>
                     <action.icon className="h-6 w-6" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-gray-900">{action.label}</h3>
-                    <p className="text-xs text-gray-500 mt-1">{action.description}</p>
+                    <h3 className="text-sm font-medium text-blue-900">{action.label}</h3>
+                    <p className="text-xs text-blue-500 mt-1">{action.description}</p>
                   </div>
                 </Link>
               ))}
@@ -191,7 +194,7 @@ export default function ManagerPage() {
             <div className="bg-white rounded-lg shadow">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-900">承認待ち</h2>
+                  <h2 className="text-lg font-semibold text-blue-900">承認待ち</h2>
                   <Link href="/manager/approvals" className="text-sm text-blue-600 hover:text-blue-700 flex items-center">
                     すべて見る
                     <ArrowRight className="h-4 w-4 ml-1" />
@@ -199,14 +202,14 @@ export default function ManagerPage() {
                 </div>
                 <div className="space-y-3">
                   {pendingApprovals.map((approval, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className="bg-yellow-100 p-2 rounded">
                           <Clock className="h-5 w-5 text-yellow-600" />
                         </div>
                         <div>
-                          <p className="text-sm font-medium text-gray-900">{approval.staff}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="text-sm font-medium text-blue-900">{approval.staff}</p>
+                          <p className="text-xs text-blue-500">
                             {approval.type} • {approval.date} {approval.time}
                           </p>
                         </div>
@@ -223,7 +226,7 @@ export default function ManagerPage() {
             {/* Quick Insights */}
             <div className="bg-white rounded-lg shadow">
               <div className="p-6">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">店舗インサイト</h2>
+                <h2 className="text-lg font-semibold text-blue-900 mb-4">店舗インサイト</h2>
                 <div className="space-y-4">
                   <div className="p-4 bg-blue-50 rounded-lg">
                     <div className="flex items-center space-x-3">
@@ -256,8 +259,9 @@ export default function ManagerPage() {
               </div>
             </div>
           </div>
-        </div>
-      </DashboardLayout>
+          </div>
+        </main>
+      </div>
     </ProtectedRoute>
   );
 }
