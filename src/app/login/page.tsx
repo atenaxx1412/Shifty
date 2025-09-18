@@ -79,7 +79,7 @@ export default function LoginPage() {
           <div className="mb-8 flex justify-center">
             <div className="animate-spin-slow">
               <Image
-                src="/images/logo-only.png"
+                src="/images/logo-only-transparent.png"
                 alt="Shifty"
                 width={180}
                 height={180}

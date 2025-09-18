@@ -274,7 +274,9 @@ export default function NewShiftRequestPage() {
       <DashboardLayout>
         <div className="space-y-6">
 
-          <div className="bg-white rounded-lg p-4">
+          {showAIRecommendations && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-3">
                     <Users className="h-5 w-5 text-yellow-600" />
                     <h3 className="font-medium text-gray-900">競合状況</h3>
@@ -287,7 +289,7 @@ export default function NewShiftRequestPage() {
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div 
                         className="bg-yellow-500 h-2 rounded-full" 
-                        style={{ width: `${(1 - aiRecommendations.approvalProbability) * 100}%` }}
+                        style={{ width: `${Math.max(0, (1 - aiRecommendations.approvalProbability) * 100)}%` }}
                       ></div>
                     </div>
                     <p className="text-xs text-gray-500 mt-1">競合レベル</p>
@@ -313,22 +315,22 @@ export default function NewShiftRequestPage() {
                   </div>
                 </div>
               </div>
-
-              {aiRecommendations.alternativeSlots.length > 0 && (
-                <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Lightbulb className="h-5 w-5 text-yellow-600" />
-                    <span className="font-medium text-yellow-800">代替案</span>
-                  </div>
-                  {aiRecommendations.alternativeSlots.map((slot, index) => (
-                    <div key={index} className="text-sm text-yellow-700">
-                      {format(slot.date, 'MM/dd (E)', { locale: ja })} {slot.time} - 
-                      推奨度 {Math.round(slot.score * 100)}%
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
+
+            {aiRecommendations.alternativeSlots.length > 0 && (
+              <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Lightbulb className="h-5 w-5 text-yellow-600" />
+                  <span className="font-medium text-yellow-800">代替案</span>
+                </div>
+                {aiRecommendations.alternativeSlots.map((slot, index) => (
+                  <div key={index} className="text-sm text-yellow-700">
+                    {format(slot.date, 'MM/dd (E)', { locale: ja })} {slot.time} - 推奨度 {Math.round(slot.score * 100)}%
+                  </div>
+                ))}
+              </div>
+            )}
+          )}
 
           {/* Month Selector */}
           <div className="bg-white rounded-lg shadow p-6">
