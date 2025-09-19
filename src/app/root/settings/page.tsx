@@ -253,14 +253,14 @@ export default function SettingsPage() {
   );
 
   const renderSecuritySettings = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+    <div className="space-y-4 lg:space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-green-50 rounded-lg">
-              <Shield className="h-5 w-5 text-green-600" />
+              <Shield className="h-4 w-4 lg:h-5 lg:w-5 text-green-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">認証設定</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">認証設定</h3>
           </div>
           <div className="space-y-4">
             <label className="flex items-center justify-between">
@@ -290,12 +290,12 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-orange-50 rounded-lg">
-              <Lock className="h-5 w-5 text-orange-600" />
+              <Lock className="h-4 w-4 lg:h-5 lg:w-5 text-orange-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">パスワードポリシー</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">パスワードポリシー</h3>
           </div>
           <div className="space-y-4">
             <div>
@@ -329,14 +329,14 @@ export default function SettingsPage() {
   );
 
   const renderNotificationSettings = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+    <div className="space-y-4 lg:space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-blue-50 rounded-lg">
-              <Mail className="h-5 w-5 text-blue-600" />
+              <Mail className="h-4 w-4 lg:h-5 lg:w-5 text-blue-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">メール通知</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">メール通知</h3>
           </div>
           <div className="space-y-4">
             <label className="flex items-center justify-between">
@@ -366,12 +366,12 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-green-50 rounded-lg">
-              <Smartphone className="h-5 w-5 text-green-600" />
+              <Smartphone className="h-4 w-4 lg:h-5 lg:w-5 text-green-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">プッシュ通知</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">プッシュ通知</h3>
           </div>
           <div className="space-y-4">
             <label className="flex items-center justify-between">
@@ -405,14 +405,14 @@ export default function SettingsPage() {
   );
 
   const renderAppearanceSettings = () => (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+    <div className="space-y-4 lg:space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-purple-50 rounded-lg">
-              <Palette className="h-5 w-5 text-purple-600" />
+              <Palette className="h-4 w-4 lg:h-5 lg:w-5 text-purple-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">テーマ設定</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">テーマ設定</h3>
           </div>
           <div className="space-y-4">
             <div>
@@ -447,12 +447,12 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex items-center space-x-3 mb-4">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+          <div className="flex items-center space-x-3 mb-3 lg:mb-4">
             <div className="p-2 bg-indigo-50 rounded-lg">
-              <Globe className="h-5 w-5 text-indigo-600" />
+              <Globe className="h-4 w-4 lg:h-5 lg:w-5 text-indigo-600" />
             </div>
-            <h3 className="font-semibold text-gray-900">地域設定</h3>
+            <h3 className="font-semibold text-gray-900 text-sm lg:text-base">地域設定</h3>
           </div>
           <div className="space-y-4">
             <div>
