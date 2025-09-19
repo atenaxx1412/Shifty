@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { ManagerWithStaff, ShopsStatsData } from '@/services/shopsDataService';
 import { UserWithId, UsersStatsData } from '@/services/usersDataService';
+import { DatabaseStats } from '@/services/databaseDataService';
 
 interface SharedDataType {
   managersData: ManagerWithStaff[];
@@ -19,6 +20,7 @@ interface SharedDataType {
   };
   shopsStats: ShopsStatsData;
   usersStats: UsersStatsData;
+  databaseStats: DatabaseStats;
   lastUpdated: Date | null;
 }
 

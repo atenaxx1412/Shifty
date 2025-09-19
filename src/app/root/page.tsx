@@ -25,6 +25,7 @@ import {
   fetchOptimizedUsersData,
   fetchOptimizedUsersStats
 } from '@/services/usersDataService';
+import { fetchOptimizedDatabaseStats } from '@/services/databaseDataService';
 import { useDataSharing } from '@/contexts/DataSharingContext';
 
 export default function RootPage() {
@@ -83,9 +84,29 @@ export default function RootPage() {
     }
   });
 
+  // データベース統計データのキャッシュ
+  const {
+    data: databaseStats,
+    loading: databaseStatsLoading,
+    refresh: refreshDatabaseStats
+  } = useDataCache({
+    key: 'databaseStats',
+    fetchFunction: fetchOptimizedDatabaseStats,
+    ttl: 24 * 60 * 60 * 1000, // 24時間
+    initialData: {
+      totalCollections: 0,
+      totalDocuments: 0,
+      storageUsed: 0,
+      storageLimit: 1024,
+      lastBackup: new Date(),
+      systemHealth: 'healthy' as const,
+      collectionDetails: []
+    }
+  });
+
   // データが更新されたら共有データにも保存
   useEffect(() => {
-    if (statsData && usersData && usersStats && !statsLoading && !usersLoading && !usersStatsLoading) {
+    if (statsData && usersData && usersStats && databaseStats && !statsLoading && !usersLoading && !usersStatsLoading && !databaseStatsLoading) {
       console.log('📤 Sharing root data with other pages');
       setSharedData({
         managersData: [], // shopsページで詳細データが必要な場合は後で追加
@@ -100,10 +121,11 @@ export default function RootPage() {
           managersWithoutStaff: 0
         },
         usersStats: usersStats,
+        databaseStats: databaseStats,
         lastUpdated: new Date()
       });
     }
-  }, [statsData, usersData, usersStats, statsLoading, usersLoading, usersStatsLoading, setSharedData]);
+  }, [statsData, usersData, usersStats, databaseStats, statsLoading, usersLoading, usersStatsLoading, databaseStatsLoading, setSharedData]);
 
   const adminStats = [
     {
