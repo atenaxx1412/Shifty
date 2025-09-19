@@ -322,23 +322,34 @@ export default function UsersPage() {
             transition: isAnimating ? 'transform 0.3s ease-out' : 'none'
           }}
         >
-          <div className="max-w-7xl mx-auto space-y-8">
+          <div className="max-w-7xl mx-auto space-y-4">
 
             {/* Header with integrated search and filters */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="space-y-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 px-4 py-2 sm:p-4">
+              <div className="space-y-4 sm:space-y-4">
                 {/* Title and basic info */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                  <div className="flex items-center space-x-3">
-                    <Users className="h-6 w-6 text-gray-700" />
-                    <div>
-                      <h1 className="text-xl font-bold text-gray-900">ユーザー管理</h1>
-                      <p className="text-sm text-gray-500 hidden sm:block">システムユーザーの管理・権限設定・アクセス制御</p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-0 sm:space-y-0">
+                  <div className="flex items-center justify-between w-full sm:w-auto py-1">
+                    <div className="flex items-center space-x-3">
+                      <Users className="h-6 w-6 text-gray-700" />
+                      <div>
+                        <h1 className="text-xl font-bold text-gray-900">ユーザー管理</h1>
+                        <p className="text-sm text-gray-500 hidden sm:block">システムユーザーの管理・権限設定・アクセス制御</p>
+                      </div>
                     </div>
+
+                    {/* Update button - Mobile only (right side) */}
+                    <button
+                      onClick={refreshUsers}
+                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-sm whitespace-nowrap sm:hidden"
+                    >
+                      <Activity className="h-4 w-4 mr-1.5" />
+                      更新
+                    </button>
                   </div>
 
-                  {/* Controls row - responsive */}
-                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+                  {/* Controls row - Desktop only */}
+                  <div className="hidden sm:flex sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
                     {/* Search input */}
                     <div className="relative flex-1 sm:flex-none sm:w-64">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -367,7 +378,7 @@ export default function UsersPage() {
                       <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
                     </div>
 
-                    {/* Update button */}
+                    {/* Update button - Desktop */}
                     <button
                       onClick={refreshUsers}
                       className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-sm whitespace-nowrap"
