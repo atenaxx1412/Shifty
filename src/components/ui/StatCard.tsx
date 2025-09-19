@@ -25,26 +25,26 @@ export default function StatCard({
   className = ''
 }: StatCardProps) {
   const sizeClasses = {
-    sm: 'p-2.5 sm:p-2',
-    md: 'p-3',
-    lg: 'p-4'
+    sm: 'p-3 lg:p-4 lg:py-5',
+    md: 'p-3 lg:p-4 lg:py-6',
+    lg: 'p-4 lg:p-5 lg:py-7'
   };
 
   const textSizes = {
     sm: {
-      value: 'text-lg sm:text-base',
-      label: 'text-xs',
+      value: 'text-lg lg:text-xl',
+      label: 'text-xs lg:text-sm',
       change: 'text-xs'
     },
     md: {
-      value: 'text-xl',
-      label: 'text-xs',
+      value: 'text-xl lg:text-2xl',
+      label: 'text-xs lg:text-sm',
       change: 'text-xs'
     },
     lg: {
-      value: 'text-2xl',
-      label: 'text-sm',
-      change: 'text-xs'
+      value: 'text-2xl lg:text-3xl',
+      label: 'text-sm lg:text-base',
+      change: 'text-xs lg:text-sm'
     }
   };
 
@@ -84,8 +84,8 @@ export default function StatCard({
               <span>{change}</span>
             </div>
           )}
-          <div className={`p-2 rounded-xl bg-gradient-to-br ${gradient} shadow-lg`}>
-            <Icon className="h-4 w-4 text-white" />
+          <div className={`p-2 lg:p-3 rounded-xl bg-gradient-to-br ${gradient} shadow-lg`}>
+            <Icon className="h-4 w-4 lg:h-5 lg:w-5 text-white" />
           </div>
         </div>
       </div>

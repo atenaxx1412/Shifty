@@ -28,7 +28,8 @@ import { notifyUserDeletion } from '@/utils/userDeletionNotifier';
 import StatCard from '@/components/ui/StatCard';
 import GradientHeader from '@/components/ui/GradientHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { useFirebaseData } from '@/hooks/useFirebaseData';
+import { useDataSharing } from '@/contexts/DataSharingContext';
+import { fetchOptimizedUsersData } from '@/services/usersDataService';
 
 interface UserWithId extends User {
   id: string;
@@ -41,6 +42,7 @@ export default function UsersPage() {
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
   const [editingUser, setEditingUser] = useState<UserWithId | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // スワイプ機能用の状態
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -48,8 +50,51 @@ export default function UsersPage() {
   const [isAnimating, setIsAnimating] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use the custom hook for users data
-  const { data: users, loading, refresh: refreshUsers } = useFirebaseData<UserWithId>('users');
+  // 共有データシステムを使用
+  const { sharedData, isDataFresh } = useDataSharing();
+
+  // 共有データからusersデータを取得、なければフォールバック
+  const [users, setUsers] = useState<UserWithId[]>([]);
+
+  // データの初期化と更新処理
+  useEffect(() => {
+    const loadUsersData = async () => {
+      if (sharedData?.usersData && isDataFresh(30)) {
+        console.log('📋 Using cached users data from shared context');
+        setUsers(sharedData.usersData);
+        setLoading(false);
+        return;
+      }
+
+      // フォールバック: 共有データがない場合は直接取得
+      console.log('🔄 Fallback: fetching users data directly');
+      setLoading(true);
+      try {
+        const freshData = await fetchOptimizedUsersData();
+        setUsers(freshData);
+      } catch (error) {
+        console.error('❌ Error fetching users data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUsersData();
+  }, [sharedData, isDataFresh]);
+
+  // データ更新用の関数
+  const refreshUsers = async () => {
+    console.log('🔄 Manual refresh users data');
+    setLoading(true);
+    try {
+      const freshData = await fetchOptimizedUsersData();
+      setUsers(freshData);
+    } catch (error) {
+      console.error('❌ Error refreshing users data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Initialize filtered users when users data changes
   useEffect(() => {
@@ -263,12 +308,12 @@ export default function UsersPage() {
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
-      <div className="h-screen overflow-hidden bg-gray-50">
+      <div className="min-h-screen bg-gray-50">
         <AppHeader title="ユーザー管理" />
 
         <main
           ref={containerRef}
-          className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)]"
+          className="px-4 sm:px-6 lg:px-8 py-4"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -288,7 +333,7 @@ export default function UsersPage() {
                     <Users className="h-6 w-6 text-gray-700" />
                     <div>
                       <h1 className="text-xl font-bold text-gray-900">ユーザー管理</h1>
-                      <p className="text-sm text-gray-500">システムユーザーの管理・権限設定・アクセス制御</p>
+                      <p className="text-sm text-gray-500 hidden sm:block">システムユーザーの管理・権限設定・アクセス制御</p>
                     </div>
                   </div>
 
@@ -325,9 +370,9 @@ export default function UsersPage() {
                     {/* Update button */}
                     <button
                       onClick={refreshUsers}
-                      className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm whitespace-nowrap"
+                      className="inline-flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-sm whitespace-nowrap"
                     >
-                      <Activity className="h-4 w-4 mr-2" />
+                      <Activity className="h-4 w-4 mr-1.5" />
                       更新
                     </button>
                   </div>
@@ -336,7 +381,7 @@ export default function UsersPage() {
             </div>
             
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               {userStats.map((stat, index) => (
                 <StatCard
                   key={index}
@@ -345,7 +390,7 @@ export default function UsersPage() {
                   unit={stat.unit}
                   icon={stat.icon}
                   gradient={stat.gradient}
-                  size="md"
+                  size="sm"
                 />
               ))}
             </div>

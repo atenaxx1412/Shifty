@@ -4,11 +4,18 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { 
-  Users, 
+import { useDataCache } from '@/hooks/useDataCache';
+import {
+  fetchOptimizedShopsData,
+  fetchOptimizedShopsStats,
+  ManagerWithStaff,
+  ShopsStatsData
+} from '@/services/shopsDataService';
+import { useDataSharing } from '@/contexts/DataSharingContext';
+import {
+  Users,
   UserCheck,
   User,
-  Search, 
   ChevronDown,
   ChevronRight,
   Plus,
@@ -35,11 +42,51 @@ interface ManagerWithStaff {
 
 export default function ManagersPage() {
   const { currentUser } = useAuth();
-  const [managersData, setManagersData] = useState<ManagerWithStaff[]>([]);
-  const [allUsers, setAllUsers] = useState<UserType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const { sharedData, isDataFresh, updateSharedData } = useDataSharing();
+
+  // 共有データが新鮮（5分以内）かチェック
+  const useSharedDataForStats = isDataFresh(5);
+
+  // 統計データ: 共有データが新鮮なら使用、そうでなければキャッシュから取得
+  const {
+    data: localStatsData,
+    loading: statsLoading,
+    refresh: refreshStats
+  } = useDataCache<ShopsStatsData>({
+    key: 'shopsStats',
+    fetchFunction: fetchOptimizedShopsStats,
+    initialData: {
+      totalManagers: 0,
+      totalStaff: 0,
+      totalUsers: 0,
+      averageStaffPerManager: 0,
+      managersWithStaff: 0,
+      managersWithoutStaff: 0
+    }
+  });
+
+  // 詳細データ（店長・スタッフ一覧）は常にキャッシュから取得
+  const {
+    data: managersData,
+    loading,
+    error,
+    refresh: refreshShopsData
+  } = useDataCache<ManagerWithStaff[]>({
+    key: 'shopsData',
+    fetchFunction: fetchOptimizedShopsData,
+    initialData: []
+  });
+
+  // 使用する統計データを決定（共有データ優先）
+  const statsData = useSharedDataForStats && sharedData?.shopsStats
+    ? sharedData.shopsStats
+    : localStatsData;
+
+  console.log('📊 Stats data source:', {
+    useSharedData: useSharedDataForStats,
+    sharedDataAge: sharedData?.lastUpdated ? Math.round((Date.now() - new Date(sharedData.lastUpdated).getTime()) / (1000 * 60)) + ' minutes' : 'N/A',
+    source: useSharedDataForStats ? 'Root page data (shared)' : 'Local cache'
+  });
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [showCreateStaffModal, setShowCreateStaffModal] = useState(false);
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
@@ -62,51 +109,20 @@ export default function ManagersPage() {
     'シフト管理', '新人研修', '売上分析', 'POS操作', '電話対応'
   ]);
 
-  // Fetch all users and organize by manager
-  const fetchManagersAndStaff = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // ローカル状態でUI状態（展開/折りたたみ）を管理
+  const [localManagersData, setLocalManagersData] = useState<ManagerWithStaff[]>([]);
 
-      // Get all users
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const users = usersSnapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id
-      })) as UserType[];
-
-      setAllUsers(users);
-
-      // Get managers
-      const managers = users.filter(user => user.role === 'manager');
-      
-      // Organize staff by manager
-      const managersWithStaff: ManagerWithStaff[] = managers.map(manager => {
-        const staff = users.filter(user => user.role === 'staff' && user.managerId === manager.uid);
-        return {
-          manager,
-          staff,
-          isExpanded: false
-        };
-      });
-
-      setManagersData(managersWithStaff);
-    } catch (error) {
-      console.error('Error fetching managers and staff:', error);
-      setError('データの取得に失敗しました');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // managersDataが更新されたらローカル状態も同期
   useEffect(() => {
-    fetchManagersAndStaff();
-  }, []);
+    if (managersData) {
+      setLocalManagersData(managersData);
+    }
+  }, [managersData]);
 
   // Toggle manager expansion
   const toggleManagerExpansion = (managerId: string) => {
-    setManagersData(prev => prev.map(item => 
-      item.manager.uid === managerId 
+    setLocalManagersData(prev => prev.map(item =>
+      item.manager.uid === managerId
         ? { ...item, isExpanded: !item.isExpanded }
         : item
     ));
@@ -161,7 +177,8 @@ export default function ManagersPage() {
       });
       
       setShowCreateManagerModal(false);
-      await fetchManagersAndStaff();
+      await refreshShopsData();
+      await refreshStats();
       
     } catch (error: any) {
       console.error('❌ Error creating manager:', error);
@@ -225,7 +242,8 @@ export default function ManagersPage() {
       });
       
       setShowCreateStaffModal(false);
-      await fetchManagersAndStaff();
+      await refreshShopsData();
+      await refreshStats();
       
     } catch (error: any) {
       console.error('❌ Error creating staff:', error);
@@ -261,8 +279,9 @@ export default function ManagersPage() {
             { userType }
           );
         }
-        
-        await fetchManagersAndStaff();
+
+        await refreshShopsData();
+        await refreshStats();
       }
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -270,17 +289,8 @@ export default function ManagersPage() {
     }
   };
 
-  // Filter managers based on search term
-  const filteredManagers = managersData.filter(item =>
-    item.manager.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.manager.userId?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
-  const stats = {
-    totalManagers: managersData.length,
-    totalStaff: managersData.reduce((sum, item) => sum + item.staff.length, 0),
-    totalUsers: managersData.length + managersData.reduce((sum, item) => sum + item.staff.length, 0)
-  };
+  // 統計データは最適化されたキャッシュから取得
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
@@ -291,96 +301,96 @@ export default function ManagersPage() {
           <div className="max-w-7xl mx-auto space-y-8">
             
             {/* Header */}
-            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-8 border border-white/20">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-2xl shadow-lg">
-                    <UserCheck className="h-10 w-10 text-white" />
+            <div className="bg-white/70 backdrop-blur-sm rounded-2xl shadow-xl p-4 lg:p-5 border border-white/20">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-xl shadow-lg">
+                    <UserCheck className="h-6 w-6 text-white" />
                   </div>
                   <div>
-                    <h1 className="text-3xl font-bold text-slate-800">店長・スタッフ管理</h1>
-                    <p className="text-slate-600 mt-2 text-lg">
+                    <h1 className="text-lg lg:text-xl font-bold text-slate-800">店長・スタッフ管理</h1>
+                    <p className="text-slate-600 mt-1 text-xs lg:text-sm hidden sm:block">
                       店長アカウントの作成と、各店長配下のスタッフ管理
                     </p>
                   </div>
                 </div>
-                <div className="flex space-x-3">
+                <div className="flex flex-row space-x-2 lg:space-x-3">
                   <button
                     onClick={() => setShowCreateManagerModal(true)}
-                    className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-xl hover:from-teal-600 hover:to-cyan-700 transition-all duration-200 shadow-lg hover:shadow-xl border border-white/20"
+                    className="inline-flex items-center justify-center px-2 lg:px-4 py-1.5 lg:py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg lg:rounded-xl hover:from-teal-600 hover:to-cyan-700 transition-all duration-200 shadow-lg hover:shadow-xl border border-white/20"
                   >
-                    <Plus className="h-5 w-5 mr-2" />
-                    新規店長
+                    <Plus className="h-3 lg:h-4 w-3 lg:w-4 mr-1 lg:mr-2" />
+                    <span className="text-xs lg:text-base">新規店長</span>
                   </button>
-                  <button 
-                    onClick={fetchManagersAndStaff}
-                    className="inline-flex items-center px-4 py-2.5 bg-slate-700/50 backdrop-blur-sm text-white rounded-xl hover:bg-slate-600/50 transition-all duration-200 border border-slate-600/30"
+                  <button
+                    onClick={() => {
+                      setStaffFormData({ ...staffFormData, managerId: '' });
+                      setShowCreateStaffModal(true);
+                    }}
+                    className="inline-flex items-center justify-center px-2 lg:px-4 py-1.5 lg:py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-lg lg:rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all duration-200 shadow-lg hover:shadow-xl border border-white/20"
                   >
-                    <Activity className="h-4 w-4 mr-2" />
-                    更新
+                    <Plus className="h-3 lg:h-4 w-3 lg:w-4 mr-1 lg:mr-2" />
+                    <span className="text-xs lg:text-base">新規スタッフ</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      refreshShopsData();
+                      refreshStats();
+                    }}
+                    className="inline-flex items-center justify-center px-2 lg:px-3 py-1.5 lg:py-2 bg-slate-700/50 backdrop-blur-sm text-white rounded-lg lg:rounded-xl hover:bg-slate-600/50 transition-all duration-200 border border-slate-600/30"
+                  >
+                    <Activity className="h-3 lg:h-4 w-3 lg:w-4 mr-1 lg:mr-2" />
+                    <span className="text-xs lg:text-base">更新</span>
                   </button>
                 </div>
               </div>
             </div>
             
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200/50 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-600">店長数</p>
-                    <p className="text-3xl font-bold text-teal-600">{stats.totalManagers}</p>
+                    <p className="text-xs font-medium text-slate-600">店長数</p>
+                    <p className="text-2xl font-bold text-teal-600">{statsData.totalManagers}</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-600 shadow-lg">
-                    <UserCheck className="h-6 w-6 text-white" />
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-600 shadow-lg">
+                    <UserCheck className="h-5 w-5 text-white" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
+              <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200/50 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-600">スタッフ数</p>
-                    <p className="text-3xl font-bold text-emerald-600">{stats.totalStaff}</p>
+                    <p className="text-xs font-medium text-slate-600">スタッフ数</p>
+                    <p className="text-2xl font-bold text-emerald-600">{statsData.totalStaff}</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
-                    <Users className="h-6 w-6 text-white" />
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg">
+                    <Users className="h-5 w-5 text-white" />
                   </div>
                 </div>
               </div>
 
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
+              <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200/50 p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-600">総ユーザー数</p>
-                    <p className="text-3xl font-bold text-slate-800">{stats.totalUsers}</p>
+                    <p className="text-xs font-medium text-slate-600">総ユーザー数</p>
+                    <p className="text-2xl font-bold text-slate-800">{statsData.totalUsers}</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 shadow-lg">
-                    <Users className="h-6 w-6 text-white" />
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-slate-600 to-slate-700 shadow-lg">
+                    <Users className="h-5 w-5 text-white" />
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Search Bar */}
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="店長名、ログインIDで検索..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 pr-4 py-2.5 bg-slate-50/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent focus:bg-white transition-all w-full text-slate-900"
-                />
-              </div>
-            </div>
 
             {/* Managers List */}
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">店長・スタッフ一覧</h3>
-                <p className="text-sm text-gray-500 mt-1">{filteredManagers.length}人の店長が表示されています</p>
+            <div className="bg-white/90 backdrop-blur-sm rounded-xl shadow-lg border border-slate-200/50 overflow-hidden">
+              <div className="px-4 py-3 border-b border-gray-200">
+                <h3 className="text-base font-semibold text-gray-900">店長・スタッフ一覧</h3>
+                <p className="text-xs text-gray-500 mt-1">{localManagersData.length}人の店長が表示されています</p>
               </div>
               
               {loading ? (
@@ -390,10 +400,10 @@ export default function ManagersPage() {
                 </div>
               ) : (
                 <div className="space-y-0">
-                  {filteredManagers.map((item) => (
+                  {localManagersData.map((item) => (
                     <div key={item.manager.uid} className="border-b border-slate-200/30 last:border-b-0">
                       {/* Manager Row */}
-                      <div className="bg-slate-50/80 backdrop-blur-sm p-6 hover:bg-white/90 transition-all duration-200">
+                      <div className="bg-slate-50/80 backdrop-blur-sm p-4 hover:bg-white/90 transition-all duration-200">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-4">
                             <button
@@ -407,31 +417,31 @@ export default function ManagersPage() {
                               )}
                             </button>
                             
-                            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center shadow-lg">
-                              <span className="text-white font-semibold text-lg">
+                            <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-teal-600 to-teal-700 flex items-center justify-center shadow-lg">
+                              <span className="text-white font-semibold text-base">
                                 {item.manager.name?.charAt(0) || 'M'}
                               </span>
                             </div>
-                            
+
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center space-x-3 mb-2">
-                                <h3 className="text-lg font-semibold text-slate-900">{item.manager.name}</h3>
-                                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-teal-100 text-teal-800 border border-teal-200 shadow-sm">
+                              <div className="flex items-center space-x-2 mb-1">
+                                <h3 className="text-base font-semibold text-slate-900">{item.manager.name}</h3>
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-800 border border-teal-200 shadow-sm">
                                   <UserCheck className="h-3 w-3 mr-1" />
                                   店長
                                 </span>
                               </div>
-                              <div className="flex items-center space-x-6 text-sm text-slate-600">
+                              <div className="space-y-1 sm:space-y-0 sm:flex sm:items-center sm:space-x-4 text-xs text-slate-600">
                                 <div className="flex items-center">
-                                  <Shield className="h-4 w-4 mr-1" />
+                                  <Shield className="h-3 w-3 mr-1 text-slate-500" />
                                   <span>ID: {item.manager.userId}</span>
                                 </div>
                                 <div className="flex items-center">
-                                  <Building className="h-4 w-4 mr-1" />
+                                  <Building className="h-3 w-3 mr-1 text-slate-500" />
                                   <span>{item.manager.shopName || '店舗情報未設定'}</span>
                                 </div>
                                 <div className="flex items-center">
-                                  <Users className="h-4 w-4 mr-1" />
+                                  <Users className="h-3 w-3 mr-1 text-slate-500" />
                                   <span>{item.staff.length}人のスタッフ</span>
                                 </div>
                               </div>
@@ -440,19 +450,8 @@ export default function ManagersPage() {
                           
                           <div className="flex items-center space-x-2">
                             <button
-                              onClick={() => {
-                                setSelectedManagerId(item.manager.uid);
-                                setStaffFormData({ ...staffFormData, managerId: item.manager.uid });
-                                setShowCreateStaffModal(true);
-                              }}
-                              className="p-2.5 text-teal-600 hover:text-teal-700 bg-teal-50/80 hover:bg-teal-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-teal-200/50"
-                              title="スタッフを追加"
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                            <button
                               onClick={() => handleDeleteUser(item.manager.uid, 'manager')}
-                              className="p-2.5 text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-rose-200/50"
+                              className="p-2 text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-rose-200/50"
                               title="店長を削除"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -483,10 +482,18 @@ export default function ManagersPage() {
                                             スタッフ
                                           </span>
                                         </div>
-                                        <div className="flex items-center space-x-4 text-sm text-slate-600">
-                                          <span>ID: {staff.userId}</span>
-                                          <span>時給: ¥{staff.hourlyRate || '未設定'}</span>
-                                          <span>{staff.employmentType || '未設定'}</span>
+                                        <div className="space-y-1 sm:space-y-0 sm:flex sm:items-center sm:space-x-4 text-xs text-slate-600">
+                                          <div className="flex items-center">
+                                            <Shield className="h-3 w-3 mr-1 text-slate-500" />
+                                            <span>ID: {staff.userId}</span>
+                                          </div>
+                                          <div className="flex items-center">
+                                            <span>時給: {staff.hourlyRate || '未設定'}</span>
+                                          </div>
+                                          <div className="flex items-center">
+                                            <UserCheck className="h-3 w-3 mr-1 text-slate-500" />
+                                            <span>{staff.employmentType || '未設定'}</span>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -506,16 +513,7 @@ export default function ManagersPage() {
                             <div className="px-6 py-8 text-center ml-16">
                               <Users className="h-8 w-8 text-slate-400 mx-auto mb-2" />
                               <p className="text-slate-500">スタッフが登録されていません</p>
-                              <button
-                                onClick={() => {
-                                  setSelectedManagerId(item.manager.uid);
-                                  setStaffFormData({ ...staffFormData, managerId: item.manager.uid });
-                                  setShowCreateStaffModal(true);
-                                }}
-                                className="mt-2 text-sm text-teal-600 hover:text-teal-700 font-medium"
-                              >
-                                最初のスタッフを追加する
-                              </button>
+                              <p className="mt-2 text-sm text-slate-400">ヘッダーの「新規スタッフ」ボタンから追加できます</p>
                             </div>
                           )}
                         </div>
@@ -525,7 +523,7 @@ export default function ManagersPage() {
                 </div>
               )}
               
-              {!loading && filteredManagers.length === 0 && (
+              {!loading && localManagersData.length === 0 && (
                 <div className="bg-slate-50/80 backdrop-blur-sm rounded-xl border border-slate-200/50 p-12 text-center">
                   <div className="p-4 bg-slate-100/80 rounded-full inline-block mb-4">
                     <UserCheck className="h-12 w-12 text-slate-400" />
@@ -696,6 +694,24 @@ export default function ManagersPage() {
                     required
                     minLength={6}
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">所属店長 *</label>
+                  <select
+                    value={staffFormData.managerId}
+                    onChange={(e) => setStaffFormData({ ...staffFormData, managerId: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-white/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent transition-all"
+                    required
+                  >
+                    <option value="">店長を選択してください</option>
+                    {localManagersData.map((manager) => (
+                      <option key={manager.manager.uid} value={manager.manager.uid}>
+                        {manager.manager.name} (ID: {manager.manager.userId})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">このスタッフが所属する店長を選択してください</p>
                 </div>
               </div>
 
