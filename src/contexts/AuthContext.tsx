@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import { doc, getDoc, query, where, collection, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { User, UserRole } from '@/types';
-import SessionWarning from '@/components/auth/SessionWarning';
 import { logAuth, logSecurity } from '@/lib/auditLogger';
+import { isUserDeleted, clearDeletedUser, setupDeletionListener } from '@/utils/userDeletionNotifier';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -14,9 +14,7 @@ interface AuthContextType {
   signIn: (userId: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   isAuthorized: (requiredRole?: UserRole[]) => boolean;
-  updateActivity: () => void;
-  sessionTimeRemaining: number;
-  isSessionExpiringSoon: boolean;
+  checkUserExists: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -83,16 +81,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); // 初期状態をtrueに変更
-  const [lastActivity, setLastActivity] = useState<number>(0); // Hydration safe
-  const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number>(30 * 60 * 1000); // 30 minutes in ms
-  const [isSessionExpiringSoon, setIsSessionExpiringSoon] = useState<boolean>(false);
-  
-  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  const SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
-  const WARNING_TIME = 5 * 60 * 1000; // 5 minutes warning
 
   // Enhanced session restoration on mount
   useEffect(() => {
@@ -130,120 +118,115 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreSession();
   }, []);
 
-  // Auto-logout functionality
-  const handleAutoLogout = useCallback(async () => {
-    console.log('🔒 Auto-logout: Session expired due to inactivity');
-    
-    // Log auto-logout before clearing user data
-    if (currentUser) {
-      await logAuth('Auto Logout', currentUser.uid, currentUser.name, currentUser.role, true, 'Session expired due to inactivity');
-      await logSecurity('Session Timeout', 'info', currentUser.uid, currentUser.name, { reason: 'Inactivity timeout' });
-    }
-    
-    setCurrentUser(null);
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('lastActivity');
-      document.cookie = 'auth-token=; path=/; max-age=0';
-    }
-    clearAllTimers();
-    router.replace('/login?reason=session-expired');
-  }, [router, currentUser]);
+  // Check if user still exists in database
+  const checkUserExists = useCallback(async () => {
+    if (!currentUser) return;
 
-  const clearAllTimers = useCallback(() => {
-    if (inactivityTimerRef.current) {
-      clearTimeout(inactivityTimerRef.current);
-      inactivityTimerRef.current = null;
-    }
-    if (warningTimerRef.current) {
-      clearTimeout(warningTimerRef.current);
-      warningTimerRef.current = null;
-    }
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current);
-      countdownTimerRef.current = null;
-    }
-  }, []);
+    try {
+      // まずlocalStorageの削除リストをチェック（Firebase読み込み回数削減）
+      if (isUserDeleted(currentUser.uid)) {
+        console.log('🔒 User found in deletion list - account has been deleted');
 
-  const updateActivity = useCallback(() => {
-    const now = Date.now();
-    setLastActivity(now);
-    setSessionTimeRemaining(SESSION_TIMEOUT);
-    setIsSessionExpiringSoon(false);
+        // Log the forced logout
+        await logAuth('Forced Logout', currentUser.uid, currentUser.name, currentUser.role, true, 'User account deleted by administrator');
+        await logSecurity('Account Deletion', 'warn', currentUser.uid, currentUser.name, { reason: 'User account deleted' });
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lastActivity', now.toString());
-    }
-
-    // Clear existing timers
-    clearAllTimers();
-
-    // Set new inactivity timer
-    inactivityTimerRef.current = setTimeout(() => {
-      handleAutoLogout();
-    }, SESSION_TIMEOUT);
-
-    // Set warning timer
-    warningTimerRef.current = setTimeout(() => {
-      setIsSessionExpiringSoon(true);
-      console.log('⚠️ Session expiring soon - 5 minutes remaining');
-
-      // Start countdown
-      const startTime = Date.now();
-      countdownTimerRef.current = setInterval(() => {
-        const elapsed = Date.now() - startTime;
-        const remaining = WARNING_TIME - elapsed;
-
-        if (remaining <= 0) {
-          clearInterval(countdownTimerRef.current!);
-          handleAutoLogout();
-        } else {
-          setSessionTimeRemaining(remaining);
+        // Clear user session and deletion record
+        setCurrentUser(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('lastActivity');
+          document.cookie = 'auth-token=; path=/; max-age=0';
         }
-      }, 1000);
-    }, SESSION_TIMEOUT - WARNING_TIME);
-  }, [SESSION_TIMEOUT, WARNING_TIME]); // 依存関係を最小限に
+        clearDeletedUser(currentUser.uid);
 
-  // Activity tracking effect
+        // Redirect to login with message
+        router.replace('/login?reason=account-deleted');
+        return;
+      }
+
+      // Firebase読み込み頻度を下げるため、一定の確率でのみデータベースチェック実行
+      const shouldCheckDatabase = Math.random() < 0.1; // 10%の確率
+      if (!shouldCheckDatabase) return;
+
+      // Check if user still exists in the database
+      const userQuery = query(
+        collection(db, 'users'),
+        where('uid', '==', currentUser.uid)
+      );
+
+      const userSnapshot = await getDocs(userQuery);
+
+      if (userSnapshot.empty) {
+        // User has been deleted from database
+        console.log('🔒 User account has been deleted (database check)');
+
+        // Log the forced logout
+        await logAuth('Forced Logout', currentUser.uid, currentUser.name, currentUser.role, true, 'User account deleted by administrator');
+        await logSecurity('Account Deletion', 'warn', currentUser.uid, currentUser.name, { reason: 'User account deleted' });
+
+        // Clear user session
+        setCurrentUser(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('currentUser');
+          localStorage.removeItem('lastActivity');
+          document.cookie = 'auth-token=; path=/; max-age=0';
+        }
+
+        // Redirect to login with message
+        router.replace('/login?reason=account-deleted');
+      }
+    } catch (error) {
+      console.error('Error checking user existence:', error);
+      // Don't logout on error to avoid disrupting legitimate sessions
+    }
+  }, [currentUser, router]);
+
+
+
+  // Check user existence on navigation/focus and setup deletion listener
   useEffect(() => {
     if (!currentUser) return;
 
-    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    // Check user existence when page becomes visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkUserExists();
+      }
+    };
 
-    const activityListener = () => {
-      updateActivity();
+    // Check on route changes
+    const handleRouteChange = () => {
+      checkUserExists();
+    };
+
+    // Handle deletion notifications from other tabs
+    const handleUserDeletion = (deletedUid: string) => {
+      if (currentUser.uid === deletedUid) {
+        console.log('🔒 Current user has been deleted in another tab');
+        checkUserExists(); // This will trigger the logout process
+      }
     };
 
     // Add event listeners
-    events.forEach(event => {
-      document.addEventListener(event, activityListener, true);
-    });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange);
+    window.addEventListener('popstate', handleRouteChange);
 
-    // Check for stored last activity and validate session
-    const storedLastActivity = localStorage?.getItem('lastActivity');
-    if (storedLastActivity) {
-      const lastActivityTime = parseInt(storedLastActivity);
-      const timeSinceLastActivity = Date.now() - lastActivityTime;
+    // Setup deletion listener
+    const removeDeletionListener = setupDeletionListener(handleUserDeletion);
 
-      if (timeSinceLastActivity > SESSION_TIMEOUT) {
-        console.log('🕐 Session timeout detected, logging out user');
-        handleAutoLogout();
-        return;
-      } else {
-        updateActivity();
-      }
-    } else {
-      updateActivity();
-    }
+    // Initial check
+    checkUserExists();
 
     // Cleanup
     return () => {
-      events.forEach(event => {
-        document.removeEventListener(event, activityListener, true);
-      });
-      clearAllTimers();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('popstate', handleRouteChange);
+      removeDeletionListener();
     };
-  }, [currentUser, SESSION_TIMEOUT]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentUser, checkUserExists]);
 
   const signIn = async (userId: string, password: string) => {
     setLoading(true);
@@ -316,9 +299,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Remove authentication cookie
       document.cookie = 'auth-token=; path=/; max-age=0';
     }
-    clearAllTimers();
-    setIsSessionExpiringSoon(false);
-    setSessionTimeRemaining(SESSION_TIMEOUT);
     router.replace('/login');
   };
 
@@ -338,15 +318,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     isAuthorized,
-    updateActivity,
-    sessionTimeRemaining,
-    isSessionExpiringSoon,
+    checkUserExists,
   };
 
   return (
     <AuthContext.Provider value={value}>
       {children}
-      <SessionWarning />
     </AuthContext.Provider>
   );
 }

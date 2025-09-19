@@ -24,6 +24,7 @@ import { collection, getDocs, doc, deleteDoc, addDoc, updateDoc, query, where } 
 import { db } from '@/lib/firebase';
 import { User, UserRole } from '@/types';
 import { logUserAction, logDataChange } from '@/lib/auditLogger';
+import { notifyUserDeletion } from '@/utils/userDeletionNotifier';
 import StatCard from '@/components/ui/StatCard';
 import GradientHeader from '@/components/ui/GradientHeader';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
@@ -185,6 +186,11 @@ export default function UsersPage() {
           `user:${userToDelete.uid}`,
           { action: 'delete', targetUser: userToDelete.name }
         );
+
+        // 削除されたユーザーに対して自動ログアウト通知を送信
+        if (userToDelete.uid) {
+          notifyUserDeletion(userToDelete.uid);
+        }
       }
 
       await refreshUsers();
