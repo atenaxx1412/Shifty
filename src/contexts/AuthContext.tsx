@@ -170,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLastActivity(now);
     setSessionTimeRemaining(SESSION_TIMEOUT);
     setIsSessionExpiringSoon(false);
-    
+
     if (typeof window !== 'undefined') {
       localStorage.setItem('lastActivity', now.toString());
     }
@@ -187,13 +187,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     warningTimerRef.current = setTimeout(() => {
       setIsSessionExpiringSoon(true);
       console.log('⚠️ Session expiring soon - 5 minutes remaining');
-      
+
       // Start countdown
       const startTime = Date.now();
       countdownTimerRef.current = setInterval(() => {
         const elapsed = Date.now() - startTime;
         const remaining = WARNING_TIME - elapsed;
-        
+
         if (remaining <= 0) {
           clearInterval(countdownTimerRef.current!);
           handleAutoLogout();
@@ -202,14 +202,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }, 1000);
     }, SESSION_TIMEOUT - WARNING_TIME);
-  }, [SESSION_TIMEOUT, WARNING_TIME, handleAutoLogout, clearAllTimers]);
+  }, [SESSION_TIMEOUT, WARNING_TIME]); // 依存関係を最小限に
 
   // Activity tracking effect
   useEffect(() => {
     if (!currentUser) return;
 
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
-    
+
     const activityListener = () => {
       updateActivity();
     };
@@ -224,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (storedLastActivity) {
       const lastActivityTime = parseInt(storedLastActivity);
       const timeSinceLastActivity = Date.now() - lastActivityTime;
-      
+
       if (timeSinceLastActivity > SESSION_TIMEOUT) {
         console.log('🕐 Session timeout detected, logging out user');
         handleAutoLogout();
@@ -243,7 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       clearAllTimers();
     };
-  }, [currentUser, updateActivity, handleAutoLogout, SESSION_TIMEOUT, clearAllTimers]);
+  }, [currentUser, SESSION_TIMEOUT]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const signIn = async (userId: string, password: string) => {
     setLoading(true);

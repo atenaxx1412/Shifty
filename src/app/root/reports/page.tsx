@@ -4,10 +4,9 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { collection, getDocs, query, where, orderBy, limit, Timestamp } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
-import { budgetService } from '@/lib/budgetService';
-import { startOfMonth, endOfMonth, subMonths, format } from 'date-fns';
+import { fetchOptimizedReportData, ReportData as ServiceReportData } from '@/services/reportsDataService';
+import { useDataCacheEnhanced } from '@/hooks/useDataCacheEnhanced';
+import { format } from 'date-fns';
 import {
   BarChart3,
   TrendingUp,
@@ -27,185 +26,61 @@ import GradientHeader from '@/components/ui/GradientHeader';
 import StatCard from '@/components/ui/StatCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
-interface ReportData {
-  totalRevenue: number;
-  totalProfit: number;
-  totalUsers: number;
-  totalManagers: number;
-  totalShifts: number;
-  monthlyGrowth: number;
-  monthlyProfitGrowth: number;
-  userGrowth: number;
-  revenueByManager: { manager: string; revenue: number; profit: number }[];
-  usersByRole: { role: string; count: number }[];
-  monthlyTrends: { month: string; revenue: number; profit: number; users: number }[];
-}
+// Using ReportData from service
+type ReportData = ServiceReportData;
 
 export default function ReportsPage() {
   const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(true);
   const [reportPeriod, setReportPeriod] = useState('monthly');
-  const [reportData, setReportData] = useState<ReportData>({
-    totalRevenue: 0,
-    totalProfit: 0,
-    totalUsers: 0,
-    totalManagers: 0,
-    totalShifts: 0,
-    monthlyGrowth: 0,
-    monthlyProfitGrowth: 0,
-    userGrowth: 0,
-    revenueByManager: [],
-    usersByRole: [],
-    monthlyTrends: []
+
+  // 改良版キャッシュ対応のデータ取得 (上書き問題修正版)
+  const {
+    data: reportData,
+    loading,
+    error,
+    refresh,
+    lastUpdated,
+    isFromCache,
+    invalidateAfterUpdate,
+    cacheVersion
+  } = useDataCacheEnhanced<ReportData>({
+    key: 'reports-data',
+    fetchFunction: fetchOptimizedReportData,
+    ttl: 24 * 60 * 60 * 1000, // 24時間
+    autoInvalidateOnUpdate: true,
+    initialData: {
+      totalRevenue: 0,
+      totalProfit: 0,
+      totalUsers: 0,
+      totalManagers: 0,
+      totalShifts: 0,
+      monthlyGrowth: 0,
+      monthlyProfitGrowth: 0,
+      userGrowth: 0,
+      revenueByManager: [],
+      usersByRole: [],
+      monthlyTrends: []
+    }
   });
 
-  // Fetch actual data from Firestore
-  const refreshReportData = async () => {
-    try {
-      setLoading(true);
-      
-      // Get users data
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Get shifts data
-      const shiftsSnapshot = await getDocs(collection(db, 'shifts_extended'));
-      const shifts = shiftsSnapshot.docs.map(doc => doc.data());
-      
-      // Get budget calculations for actual revenue data
-      const budgetSnapshot = await getDocs(collection(db, 'budgetCalculations'));
-      const budgetCalculations = budgetSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate() || new Date()
-      }));
-      
-      // Calculate user statistics
-      const usersByRole = {
-        root: users.filter(u => u.role === 'root').length,
-        manager: users.filter(u => u.role === 'manager').length,
-        staff: users.filter(u => u.role === 'staff').length
-      };
-      
-      // Get managers (店舗管理者)
-      const managers = users.filter(u => u.role === 'manager');
-      
-      // Calculate actual revenue from budget calculations
-      const totalRevenue = budgetCalculations.reduce((sum, calc) => {
-        return sum + (calc.summary?.totalCost || 0);
-      }, 0) || shifts.length * 50000; // Fallback to estimate
-      
-      // Calculate revenue and profit by manager (店舗別)
-      // Profit calculation: staff count × 150 yen × working days per month (assume 25 days)
-      const revenueByManager = managers.map(manager => {
-        const managerBudgets = budgetCalculations.filter(calc => calc.shopId === manager.uid);
-        const managerRevenue = managerBudgets.reduce((sum, calc) => {
-          return sum + (calc.summary?.totalCost || 0);
-        }, 0) || Math.floor(totalRevenue / Math.max(managers.length, 1) * (0.8 + Math.random() * 0.4));
-        
-        // Calculate profit: staff under this manager × 150 yen × 25 working days
-        const staffUnderManager = users.filter(u => u.managerId === manager.uid && u.role === 'staff').length;
-        const managerProfit = staffUnderManager * 150 * 25; // 150円 per staff per day × 25 working days
-        
-        return {
-          manager: manager.name || `店舗管理者${manager.uid.slice(-4)}`,
-          revenue: managerRevenue,
-          profit: managerProfit
-        };
-      });
-      
-      // Calculate total profit: all staff × 150 yen × 25 working days
-      const totalStaff = users.filter(u => u.role === 'staff').length;
-      const totalProfit = totalStaff * 150 * 25;
-      
-      // Calculate growth rates from historical data
-      const currentMonth = new Date();
-      const lastMonth = subMonths(currentMonth, 1);
-      const currentMonthBudgets = budgetCalculations.filter(calc => 
-        calc.createdAt >= startOfMonth(currentMonth)
-      );
-      const lastMonthBudgets = budgetCalculations.filter(calc => 
-        calc.createdAt >= startOfMonth(lastMonth) && calc.createdAt < startOfMonth(currentMonth)
-      );
-      
-      const currentMonthRevenue = currentMonthBudgets.reduce((sum, calc) => sum + (calc.summary?.totalCost || 0), 0);
-      const lastMonthRevenue = lastMonthBudgets.reduce((sum, calc) => sum + (calc.summary?.totalCost || 0), 0);
-      const monthlyGrowth = lastMonthRevenue > 0 ? ((currentMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : 0;
-      
-      // Calculate profit growth (assume last month had same staff-1 for demo)
-      const lastMonthStaff = Math.max(1, totalStaff - 1);
-      const lastMonthProfit = lastMonthStaff * 150 * 25;
-      const monthlyProfitGrowth = lastMonthProfit > 0 ? ((totalProfit - lastMonthProfit) / lastMonthProfit) * 100 : 0;
-      
-      // Calculate user growth (compare with previous period)
-      const userGrowth = users.length > 10 ? ((users.length - 10) / 10) * 100 : 5.2; // Fallback estimate
-      
-      // Generate monthly trends from actual data
-      const monthlyTrends = [];
-      for (let i = 3; i >= 0; i--) {
-        const targetMonth = subMonths(currentMonth, i);
-        const monthStart = startOfMonth(targetMonth);
-        const monthEnd = endOfMonth(targetMonth);
-        
-        const monthBudgets = budgetCalculations.filter(calc => 
-          calc.createdAt >= monthStart && calc.createdAt <= monthEnd
-        );
-        const monthRevenue = monthBudgets.reduce((sum, calc) => sum + (calc.summary?.totalCost || 0), 0);
-        const monthUsers = users.filter(u => u.createdAt <= monthEnd).length;
-        const monthStaff = users.filter(u => u.createdAt <= monthEnd && u.role === 'staff').length;
-        const monthProfit = monthStaff * 150 * 25; // Monthly profit calculation
-        
-        monthlyTrends.push({
-          month: format(targetMonth, 'M月'),
-          revenue: monthRevenue || Math.floor(totalRevenue * (0.7 + i * 0.1)), // Fallback
-          profit: monthProfit || Math.floor(totalProfit * (0.8 + i * 0.05)), // Fallback
-          users: monthUsers || Math.floor(users.length * (0.8 + i * 0.05)) // Fallback
-        });
-      }
-      
-      const reportData: ReportData = {
-        totalRevenue,
-        totalProfit,
-        totalUsers: users.length,
-        totalManagers: managers.length,
-        totalShifts: shifts.length,
-        monthlyGrowth,
-        monthlyProfitGrowth,
-        userGrowth,
-        revenueByManager,
-        usersByRole: [
-          { role: 'スタッフ', count: usersByRole.staff },
-          { role: 'マネージャー', count: usersByRole.manager },
-          { role: 'システム管理者', count: usersByRole.root }
-        ],
-        monthlyTrends
-      };
-      
-      setReportData(reportData);
-      
-    } catch (error) {
-      console.error('Error fetching report data:', error);
-      // Set fallback data
-      setReportData({
-        totalRevenue: 0,
-        totalProfit: 0,
-        totalUsers: 0,
-        totalManagers: 0,
-        totalShifts: 0,
-        monthlyGrowth: 0,
-        monthlyProfitGrowth: 0,
-        userGrowth: 0,
-        revenueByManager: [],
-        usersByRole: [],
-        monthlyTrends: []
-      });
-    } finally {
-      setLoading(false);
+  // 改良版キャッシュステータスの確認
+  const getCacheStatusText = () => {
+    if (isFromCache && lastUpdated) {
+      const hours = Math.floor((Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60));
+      return `キャッシュデータ v${cacheVersion} (${hours}時間前に取得)`;
     }
+    return '最新データ';
+  };
+
+  // データ更新後のキャッシュ無効化関数(デバッグ用)
+  const handleDataUpdate = () => {
+    console.log('🔄 Simulating data update - invalidating cache...');
+    invalidateAfterUpdate();
   };
   
+  // reportPeriod変更時はキャッシュを保持（期間切り替えでFirebaseクエリ不要）
   useEffect(() => {
-    refreshReportData();
+    console.log(`📊 Reports page: ${reportPeriod} period selected, using cached data`);
   }, [reportPeriod]);
 
   const formatCurrency = (amount: number) => {
@@ -245,7 +120,7 @@ export default function ReportsPage() {
             {/* Header */}
             <GradientHeader
               title="全体レポート"
-              subtitle="全店舗の統合分析・売上推移・運営効率レポート"
+              subtitle={`全店舗の統合分析・売上推移・運営効率レポート • ${getCacheStatusText()}`}
               icon={BarChart3}
               gradient="from-indigo-600 to-purple-700"
               iconBackground="from-white/20 to-white/30"
@@ -263,11 +138,20 @@ export default function ReportsPage() {
                   </select>
                   <div className="flex space-x-2">
                     <button
-                      onClick={refreshReportData}
-                      className="inline-flex items-center px-4 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-all duration-200"
+                      onClick={() => refresh()}
+                      disabled={loading}
+                      className="inline-flex items-center px-3 py-2 bg-white bg-opacity-20 text-white rounded-lg hover:bg-opacity-30 transition-all duration-200 disabled:opacity-50 text-sm"
                     >
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                      更新
+                      <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} />
+                      {loading ? '更新中' : '手動更新'}
+                    </button>
+                    <button
+                      onClick={handleDataUpdate}
+                      disabled={loading}
+                      className="inline-flex items-center px-3 py-2 bg-orange-500 bg-opacity-80 text-white rounded-lg hover:bg-opacity-90 transition-all duration-200 disabled:opacity-50 text-sm"
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      データ更新テスト
                     </button>
                     <button
                       onClick={() => window.print()}

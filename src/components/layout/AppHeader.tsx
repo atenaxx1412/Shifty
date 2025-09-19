@@ -117,7 +117,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
               onClick={() => router.push(`/${currentUser?.role}`)}
               className="flex items-center hover:opacity-80 transition-opacity duration-200 cursor-pointer"
             >
-              <div className="flex items-center space-x-1">
+              <div className="flex items-center space-x-1 sm:space-x-1">
                 <Image
                   src="/images/logo-only-transparent.png"
                   alt="Shifty Logo"
@@ -131,7 +131,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                   alt="Shifty Text"
                   width={160}
                   height={80}
-                  className="h-20 w-auto sm:h-20 -ml-9"
+                  className="h-20 w-auto sm:h-20 -ml-9 sm:-ml-6"
                   quality={85}
                 />
               </div>
@@ -229,17 +229,10 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                 className="flex items-center space-x-3 p-2 rounded-xl hover:bg-gray-100 transition-colors"
               >
                 <div className="flex items-center space-x-3">
-                  <div className="hidden sm:block text-right">
+                  <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900">
-                      {currentUser?.name || currentUser?.userId || 'ユーザー'}
+                      atena
                     </p>
-                    
-                  </div>
-                  <div className="relative">
-                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                      <User className="h-5 w-5 text-white" />
-                    </div>
-                    <div className={`absolute -bottom-1 -right-1 h-4 w-4 ${getRoleColor(currentUser?.role)} rounded-full border-2 border-white`}></div>
                   </div>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
                 </div>
@@ -248,13 +241,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
               {isProfileOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2">
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-900">{currentUser?.name}</p>
-                    
-                    <div className="mt-2">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${getRoleColor(currentUser?.role)}`}>
-                        {getRoleBadge(currentUser?.role)}
-                      </span>
-                    </div>
+                    <p className="text-sm font-semibold text-gray-900">atena</p>
                   </div>
                   
                   <div className="py-1">

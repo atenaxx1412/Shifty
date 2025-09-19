@@ -19,13 +19,20 @@ import {
   Server,
   Zap,
   CheckCircle,
-  Clock
+  Clock,
+  RefreshCw
 } from 'lucide-react';
-import { collection, getDocs, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
 import StatCard from '@/components/ui/StatCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
-import { useFirebaseData, useActivityLogs } from '@/hooks/useFirebaseData';
+import { useDataCache, debugCacheStatus } from '@/hooks/useDataCache';
+import {
+  fetchOptimizedStatsData,
+  fetchOptimizedSystemStatus,
+  fetchOptimizedActivityLogs,
+  getCacheEfficiencyReport,
+  StatsData,
+  SystemStatusData
+} from '@/services/rootDataService';
 
 interface ActivityLog {
   id: string;
@@ -39,71 +46,144 @@ interface ActivityLog {
 
 export default function RootPage() {
   const { currentUser } = useAuth();
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [totalShops, setTotalShops] = useState(0);
-  const [activeShifts, setActiveShifts] = useState(0);
-  const [systemAlerts, setSystemAlerts] = useState(0);
   const [currentTime, setCurrentTime] = useState<string>('');
   const [isMounted, setIsMounted] = useState(false);
 
-  // Use the custom hook for activity logs
-  const { data: recentActivities, loading } = useActivityLogs(4);
+  // キャッシュ化されたデータフック
+  const {
+    data: statsData,
+    loading: statsLoading,
+    error: statsError,
+    refresh: refreshStats,
+    lastUpdated: statsLastUpdated
+  } = useDataCache<StatsData>({
+    key: 'rootStats',
+    fetchFunction: fetchOptimizedStatsData,
+    initialData: {
+      totalUsers: 0,
+      totalShops: 0,
+      currentProfit: 0,
+      inquiriesCount: 0,
+      userGrowth: '0%',
+      shopGrowth: '0',
+      profitGrowth: '0%',
+      inquiryGrowth: '0'
+    }
+  });
+
+  const {
+    data: systemStatus,
+    loading: systemLoading,
+    error: systemError,
+    refresh: refreshSystemStatus,
+    lastUpdated: systemLastUpdated
+  } = useDataCache<SystemStatusData>({
+    key: 'systemStatus',
+    fetchFunction: fetchOptimizedSystemStatus,
+    initialData: {
+      serverLatency: '測定中...',
+      databaseConnections: '0コレクション接続',
+      collectionCount: 0,
+      maintenanceDate: '未定'
+    }
+  });
+
+  const {
+    data: recentActivities,
+    loading: activitiesLoading,
+    error: activitiesError,
+    refresh: refreshActivities,
+    lastUpdated: activitiesLastUpdated
+  } = useDataCache<any[]>({
+    key: 'activityLogs',
+    fetchFunction: () => fetchOptimizedActivityLogs(5),
+    ttl: 30 * 60 * 1000, // 30分間キャッシュ（アクティビティは短めに）
+    initialData: []
+  });
+
+  // 手動更新機能
+  const handleRefreshAll = async () => {
+    console.log('🔄 Manual refresh triggered');
+    await Promise.all([
+      refreshStats(),
+      refreshSystemStatus(),
+      refreshActivities()
+    ]);
+  };
+
+  // デバッグ用ログ出力
+  console.log('🔍 Recent Activities Debug:', {
+    count: recentActivities.length,
+    loading: activitiesLoading,
+    error: activitiesError,
+    activities: recentActivities,
+    cacheStatus: { statsLastUpdated, systemLastUpdated, activitiesLastUpdated }
+  });
+
+  // キャッシュ効率レポートを表示（開発時のみ）
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const report = getCacheEfficiencyReport();
+      console.log('📊 Cache Efficiency Report:', report);
+      debugCacheStatus();
+    }
+  }, []);
 
   const adminStats = [
     {
       label: '総ユーザー数',
-      value: totalUsers,
+      value: statsData.totalUsers,
       unit: '名',
       icon: UserCheck,
       gradient: 'from-blue-500 to-blue-600',
-      change: '+12%',
-      trend: 'up' as const
+      change: statsData.userGrowth,
+      trend: (statsData.userGrowth.includes('+') ? 'up' : statsData.userGrowth.includes('-') ? 'down' : 'neutral') as const
     },
     {
       label: '店長数',
-      value: totalShops,
+      value: statsData.totalShops,
       unit: '名',
       icon: Users,
       gradient: 'from-emerald-500 to-emerald-600',
-      change: '+1',
-      trend: 'up' as const
+      change: statsData.shopGrowth,
+      trend: (parseInt(statsData.shopGrowth) > 0 ? 'up' : parseInt(statsData.shopGrowth) < 0 ? 'down' : 'neutral') as const
     },
     {
-      label: 'アクティブシフト',
-      value: activeShifts,
-      unit: 'シフト',
-      icon: Activity,
+      label: '現在の利益',
+      value: statsData.currentProfit.toLocaleString(),
+      unit: '円',
+      icon: TrendingUp,
       gradient: 'from-purple-500 to-purple-600',
-      change: '+8%',
-      trend: 'up' as const
+      change: statsData.profitGrowth,
+      trend: (statsData.profitGrowth.includes('+') ? 'up' : statsData.profitGrowth.includes('-') ? 'down' : 'neutral') as const
     },
     {
-      label: 'システムアラート',
-      value: systemAlerts,
+      label: 'お問い合わせ数',
+      value: statsData.inquiriesCount,
       unit: '件',
       icon: AlertTriangle,
-      gradient: 'from-red-500 to-red-600',
-      change: systemAlerts > 0 ? `+${systemAlerts}` : '0',
-      trend: (systemAlerts > 0 ? 'up' : 'down') as const
+      gradient: 'from-orange-500 to-orange-600',
+      change: statsData.inquiryGrowth,
+      trend: (parseInt(statsData.inquiryGrowth) > 0 ? 'up' : parseInt(statsData.inquiryGrowth) < 0 ? 'down' : 'neutral') as const
     },
   ];
 
   const systemActions = [
-    { 
-      icon: Users, 
-      label: '店長管理', 
-      href: '/root/shops', 
-      description: '店長の追加・編集・削除・分析', 
+    {
+      icon: Users,
+      label: '店長管理',
+      href: '/root/shops',
+      description: '店長の追加・編集・削除・分析',
       gradient: 'from-blue-500 to-blue-600',
-      stats: `${totalShops}名`
+      stats: `${statsData.totalShops}名`
     },
-    { 
-      icon: UserCheck, 
-      label: 'ユーザー管理', 
-      href: '/root/users', 
-      description: '全ユーザーの管理・権限設定', 
+    {
+      icon: UserCheck,
+      label: 'ユーザー管理',
+      href: '/root/users',
+      description: '全ユーザーの管理・権限設定',
       gradient: 'from-emerald-500 to-emerald-600',
-      stats: `${totalUsers}ユーザー`
+      stats: `${statsData.totalUsers}ユーザー`
     },
     { 
       icon: Database, 
@@ -139,51 +219,6 @@ export default function RootPage() {
     },
   ];
 
-  // 統計データを取得する関数
-  const fetchStatsData = async () => {
-    try {
-      // ユーザー数を取得
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      setTotalUsers(usersSnapshot.size);
-
-      // 店長数を取得（managerロールのユーザー）
-      const managersQuery = query(collection(db, 'users'), where('role', '==', 'manager'));
-      const managersSnapshot = await getDocs(managersQuery);
-      setTotalShops(managersSnapshot.size);
-
-      // アクティブシフト数を取得（まだコレクションが存在しない可能性があるため0に設定）
-      try {
-        const shiftsSnapshot = await getDocs(collection(db, 'shifts'));
-        setActiveShifts(shiftsSnapshot.size);
-      } catch (shiftsError) {
-        console.log('Shifts collection not found, setting to 0');
-        setActiveShifts(0);
-      }
-
-      // システムアラート数を取得（エラーレベルのログをカウント）
-      try {
-        const alertQuery = query(
-          collection(db, 'activityLogs'),
-          // where('type', '==', 'security') // セキュリティ関連のアラート
-        );
-        const alertSnapshot = await getDocs(alertQuery);
-        const errorLogs = alertSnapshot.docs.filter(doc => 
-          doc.data().type === 'security' || doc.data().level === 'error'
-        );
-        setSystemAlerts(errorLogs.length);
-      } catch (alertError) {
-        console.log('Setting system alerts to 0');
-        setSystemAlerts(0);
-      }
-    } catch (error) {
-      console.error('Error fetching stats data:', error);
-    }
-  };
-
-  // 統計データを取得
-  useEffect(() => {
-    fetchStatsData();
-  }, []);
 
   // リアルタイム時計の設定 (クライアントサイドのみ)
   useEffect(() => {
@@ -221,38 +256,14 @@ export default function RootPage() {
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
-      <div className="h-screen overflow-hidden bg-gray-50">
+      <div className="min-h-screen bg-gray-50">
         <AppHeader title="システム管理" />
-        
-        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)] overflow-y-auto">
-          <div className="max-w-7xl mx-auto space-y-4">
-            {/* Welcome Banner - Simplified */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="p-3 bg-gray-100 rounded-lg">
-                    <Shield className="h-6 w-6 text-gray-700" />
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-semibold text-gray-900">{currentUser?.name}</h1>
-                    <p className="text-sm text-gray-500">システム管理者</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-6 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-gray-600">稼働中</span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-gray-500">
-                    <Clock className="h-4 w-4" />
-                    <span>{isMounted ? currentTime : '--:--'}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+
+        <main className="px-4 sm:px-6 lg:px-8 py-4">
+          <div className="max-w-7xl mx-auto space-y-8">
 
             {/* Stats Grid - Using StatCard Component */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               {adminStats.map((stat, index) => (
                 <StatCard
                   key={index}
@@ -263,79 +274,155 @@ export default function RootPage() {
                   gradient={stat.gradient}
                   change={stat.change}
                   trend={stat.trend}
-                  size="md"
+                  size="sm"
                 />
               ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* System Administration Actions - Simplified */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">システム管理</h2>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {systemActions.map((action, index) => (
-                    <Link
-                      key={index}
-                      href={action.href}
-                      className="group p-4 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className="p-2 bg-gray-100 rounded-lg group-hover:bg-gray-200 transition-colors">
-                          <action.icon className="h-4 w-4 text-gray-600" />
+            {/* Mobile-first responsive layout */}
+            <div className="space-y-6 lg:grid lg:grid-cols-2 lg:gap-6 lg:space-y-0">
+              {/* Left Column - System Management and System Status */}
+              <div className="space-y-4">
+                {/* System Administration Actions - Responsive */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 lg:p-3">
+                  <h2 className="text-base lg:text-base font-semibold text-gray-900 mb-3 lg:mb-3">システム管理</h2>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5 lg:gap-2">
+                    {systemActions.map((action, index) => (
+                      <Link
+                        key={index}
+                        href={action.href}
+                        className="group p-3 lg:p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200"
+                      >
+                        <div className="flex items-center space-x-2.5 lg:space-x-2">
+                          <div className="p-1.5 lg:p-1.5 bg-gray-100 rounded-lg group-hover:bg-gray-200 transition-colors">
+                            <action.icon className="h-4 w-4 lg:h-3.5 lg:w-3.5 text-gray-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-sm lg:text-sm font-medium text-gray-900">{action.label}</h3>
+                            <p className="text-xs lg:text-xs text-gray-500 mt-0.5 lg:mt-0 lg:hidden">{action.description}</p>
+                            <p className="text-xs text-gray-400 mt-0.5 lg:mt-0">{action.stats}</p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-gray-900">{action.label}</h3>
-                          <p className="text-xs text-gray-500">{action.stats}</p>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+
+                {/* System Status - Responsive */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 lg:p-3">
+                  <h2 className="text-base lg:text-base font-semibold text-gray-900 mb-3 lg:mb-3">システム状態</h2>
+
+                  <div className="space-y-2.5 lg:space-y-2">
+                    <div className="flex items-center justify-between p-2.5 lg:p-2.5 rounded-lg border border-gray-200">
+                      <div className="flex items-center space-x-2.5 lg:space-x-2.5">
+                        <div className={`w-2.5 h-2.5 lg:w-2 lg:h-2 rounded-full ${systemStatus.serverLatency.includes('エラー') ? 'bg-red-500' : parseInt(systemStatus.serverLatency) > 1000 ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
+                        <div>
+                          <span className="text-sm lg:text-sm font-medium text-gray-900">サーバー</span>
+                          <p className="text-xs lg:text-xs text-gray-500">{systemStatus.serverLatency}</p>
                         </div>
                       </div>
-                    </Link>
-                  ))}
+                      <span className={`text-xs lg:text-xs font-medium ${systemStatus.serverLatency.includes('エラー') ? 'text-red-600' : parseInt(systemStatus.serverLatency) > 1000 ? 'text-yellow-600' : 'text-green-600'}`}>
+                        {systemStatus.serverLatency.includes('エラー') ? 'エラー' : parseInt(systemStatus.serverLatency) > 1000 ? '注意' : '正常'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 lg:p-2.5 rounded-lg border border-gray-200">
+                      <div className="flex items-center space-x-2.5 lg:space-x-2.5">
+                        <div className={`w-2.5 h-2.5 lg:w-2 lg:h-2 rounded-full ${systemStatus.collectionCount > 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                        <div>
+                          <span className="text-sm lg:text-sm font-medium text-gray-900">データベース</span>
+                          <p className="text-xs lg:text-xs text-gray-500">{systemStatus.databaseConnections}</p>
+                        </div>
+                      </div>
+                      <span className={`text-xs lg:text-xs font-medium ${systemStatus.collectionCount > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {systemStatus.collectionCount > 0 ? '正常' : 'エラー'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between p-2.5 lg:p-2.5 rounded-lg border border-gray-200">
+                      <div className="flex items-center space-x-2.5 lg:space-x-2.5">
+                        <div className="w-2.5 h-2.5 lg:w-2 lg:h-2 bg-green-500 rounded-full"></div>
+                        <div>
+                          <span className="text-sm lg:text-sm font-medium text-gray-900">メンテナンス</span>
+                          <p className="text-xs lg:text-xs text-gray-500">{systemStatus.maintenanceDate}</p>
+                        </div>
+                      </div>
+                      <span className="text-xs lg:text-xs font-medium text-green-600">予定なし</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Recent Activities & System Status */}
-              <div className="space-y-4">
-                {/* Recent Activities - Real-time from Firestore */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-gray-900">最近のアクティビティ</h2>
+              {/* Right Column - Recent Activities - Responsive */}
+              <div>
+                {/* Recent Activities - Optimized with Cache */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-4">
+                  <div className="flex items-center justify-between mb-4 lg:mb-4">
+                    <h2 className="text-lg lg:text-base font-semibold text-gray-900">最近のアクティビティ</h2>
                     <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-xs text-gray-500">リアルタイム</span>
+                      <button
+                        onClick={handleRefreshAll}
+                        disabled={statsLoading || systemLoading || activitiesLoading}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+                        title="全データを更新"
+                      >
+                        <RefreshCw className={`h-4 w-4 text-gray-600 ${(statsLoading || systemLoading || activitiesLoading) ? 'animate-spin' : ''}`} />
+                      </button>
+                      <div className="flex items-center space-x-1">
+                        <div className={`w-2 h-2 rounded-full ${activitiesLastUpdated ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                        <span className="text-sm lg:text-xs text-gray-500">
+                          {activitiesLastUpdated ?
+                            `${Math.round((Date.now() - activitiesLastUpdated.getTime()) / 1000 / 60)}分前更新` :
+                            'キャッシュ'
+                          }
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  
-                  {loading ? (
+
+                  {activitiesLoading ? (
                     <LoadingSpinner text="アクティビティを読み込み中..." size="sm" />
+                  ) : activitiesError ? (
+                    <div className="text-center py-8">
+                      <AlertTriangle className="mx-auto h-8 w-8 text-red-400 mb-2" />
+                      <p className="text-base lg:text-sm text-red-500">データ読み込みエラー</p>
+                      <p className="text-sm lg:text-xs text-red-400 mt-1">{activitiesError.message}</p>
+                      <button
+                        onClick={refreshActivities}
+                        className="mt-2 px-3 py-1 bg-red-100 text-red-600 rounded-lg text-xs hover:bg-red-200 transition-colors"
+                      >
+                        再試行
+                      </button>
+                    </div>
                   ) : recentActivities.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-4 lg:space-y-3">
                       {recentActivities.map((activity) => {
                         const activityData = activity as any;
                         const timestamp = activityData.timestamp?.toDate ? activityData.timestamp.toDate() : new Date(activityData.timestamp);
                         const timeAgo = getRelativeTime(timestamp);
 
                         return (
-                        <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                          <div className={`p-1.5 rounded-lg ${
+                        <div key={activity.id} className="flex items-start space-x-3 p-3 lg:p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className={`p-2 lg:p-1.5 rounded-lg ${
                             activityData.type === 'user' ? 'bg-blue-100 text-blue-600' :
                             activityData.type === 'login' ? 'bg-green-100 text-green-600' :
                             activityData.type === 'security' ? 'bg-red-100 text-red-600' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {activityData.type === 'user' ? <UserCheck className="h-3 w-3" /> :
-                             activityData.type === 'login' ? <CheckCircle className="h-3 w-3" /> :
-                             activityData.type === 'security' ? <AlertTriangle className="h-3 w-3" /> :
-                             <Activity className="h-3 w-3" />}
+                            {activityData.type === 'user' ? <UserCheck className="h-4 w-4 lg:h-3 lg:w-3" /> :
+                             activityData.type === 'login' ? <CheckCircle className="h-4 w-4 lg:h-3 lg:w-3" /> :
+                             activityData.type === 'security' ? <AlertTriangle className="h-4 w-4 lg:h-3 lg:w-3" /> :
+                             <Activity className="h-4 w-4 lg:h-3 lg:w-3" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className="text-sm font-medium text-gray-900">{activityData.action || 'アクション'}</p>
-                              <span className="text-xs text-gray-400">{timeAgo}</span>
+                              <p className="text-base lg:text-sm font-medium text-gray-900">{activityData.action || 'アクション'}</p>
+                              <span className="text-sm lg:text-xs text-gray-400">{timeAgo}</span>
                             </div>
-                            <p className="text-xs text-gray-500">{activityData.user || 'ユーザー'}</p>
+                            <p className="text-sm lg:text-xs text-gray-500 mt-1">{activityData.user || 'ユーザー'}</p>
                             {activityData.detail && (
-                              <p className="text-xs text-gray-400 mt-0.5">{activityData.detail}</p>
+                              <p className="text-sm lg:text-xs text-gray-400 mt-1 lg:mt-0.5">{activityData.detail}</p>
                             )}
                           </div>
                         </div>
@@ -345,50 +432,10 @@ export default function RootPage() {
                   ) : (
                     <div className="text-center py-8">
                       <Activity className="mx-auto h-8 w-8 text-gray-400 mb-2" />
-                      <p className="text-sm text-gray-500">アクティビティがありません</p>
-                      <p className="text-xs text-gray-400 mt-1">ユーザーの活動が表示されます</p>
+                      <p className="text-base lg:text-sm text-gray-500">アクティビティがありません</p>
+                      <p className="text-sm lg:text-xs text-gray-400 mt-1">ユーザーの活動が表示されます</p>
                     </div>
                   )}
-                </div>
-
-                {/* System Status - Simplified */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">システム状態</h2>
-                  
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <div>
-                          <span className="text-sm font-medium text-gray-900">サーバー</span>
-                          <p className="text-xs text-gray-500">45ms</p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-green-600">正常</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                        <div>
-                          <span className="text-sm font-medium text-gray-900">データベース</span>
-                          <p className="text-xs text-gray-500">12/100接続</p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-green-600">正常</span>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                        <div>
-                          <span className="text-sm font-medium text-gray-900">メンテナンス</span>
-                          <p className="text-xs text-gray-500">予定</p>
-                        </div>
-                      </div>
-                      <span className="text-xs text-gray-600">09/15</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>

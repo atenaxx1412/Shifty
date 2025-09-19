@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { collection, getDocs, getFirestore } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { fetchOptimizedDatabaseStats, DatabaseStats as ServiceDatabaseStats } from '@/services/databaseDataService';
+import { useDataCache } from '@/hooks/useDataCache';
 import {
   Database,
   Server,
@@ -28,14 +28,8 @@ import GradientHeader from '@/components/ui/GradientHeader';
 import StatCard from '@/components/ui/StatCard';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
-interface DatabaseStats {
-  totalCollections: number;
-  totalDocuments: number;
-  storageUsed: number;
-  storageLimit: number;
-  lastBackup: Date;
-  systemHealth: 'healthy' | 'warning' | 'critical';
-}
+// Using DatabaseStats from service
+type DatabaseStats = ServiceDatabaseStats;
 
 interface BackupRecord {
   id: string;
@@ -47,72 +41,44 @@ interface BackupRecord {
 
 export default function DatabasePage() {
   const { currentUser } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<DatabaseStats>({
-    totalCollections: 0,
-    totalDocuments: 0,
-    storageUsed: 0, // MB
-    storageLimit: 1024, // MB  
-    lastBackup: new Date(),
-    systemHealth: 'healthy'
+
+  // キャッシュ対応のデータ取得 (1日1回自動更新)
+  const {
+    data: stats,
+    loading,
+    error,
+    refresh,
+    lastUpdated,
+    isFromCache
+  } = useDataCache<DatabaseStats>({
+    key: 'database-stats',
+    fetchFunction: fetchOptimizedDatabaseStats,
+    ttl: 24 * 60 * 60 * 1000, // 24時間
+    initialData: {
+      totalCollections: 0,
+      totalDocuments: 0,
+      storageUsed: 0,
+      storageLimit: 1024,
+      lastBackup: new Date(),
+      systemHealth: 'healthy',
+      collectionDetails: []
+    }
   });
 
   const [backups, setBackups] = useState<BackupRecord[]>([]);
 
-  // Fetch real database statistics
-  const fetchDatabaseStats = async () => {
-    try {
-      setLoading(true);
-      
-      // Get list of known collections (based on actual Firebase collections)
-      const collectionNames = ['users', 'activityLogs', 'shifts_extended', 'systemSettings', 'system_logs', 'budgetCalculations'];
-      let totalDocuments = 0;
-      let activeCollections = 0;
-      
-      // Count documents in each collection
-      for (const collectionName of collectionNames) {
-        try {
-          const snapshot = await getDocs(collection(db, collectionName));
-          const docCount = snapshot.size;
-          if (docCount > 0) {
-            activeCollections++;
-            totalDocuments += docCount;
-            console.log(`Collection ${collectionName}: ${docCount} documents`);
-          }
-        } catch (error) {
-          console.log(`Collection ${collectionName} might not exist:`, error);
-        }
-      }
-      
-      // Estimate storage usage (rough calculation based on document count)
-      const estimatedStorageUsed = Math.round((totalDocuments * 0.5) / 10) / 100; // More realistic estimate
-      
-      setStats({
-        totalCollections: activeCollections,
-        totalDocuments: totalDocuments,
-        storageUsed: estimatedStorageUsed,
-        storageLimit: 1024,
-        lastBackup: new Date(),
-        systemHealth: 'healthy'
-      });
-    } catch (error) {
-      console.error('Error fetching database stats:', error);
-      setStats({
-        totalCollections: 0,
-        totalDocuments: 0,
-        storageUsed: 0,
-        storageLimit: 1024,
-        lastBackup: new Date(),
-        systemHealth: 'warning'
-      });
-    } finally {
-      setLoading(false);
+  // キャッシュステータスの確認
+  const getCacheStatusText = () => {
+    if (isFromCache && lastUpdated) {
+      const hours = Math.floor((Date.now() - lastUpdated.getTime()) / (1000 * 60 * 60));
+      return `キャッシュデータ (${hours}時間前に取得)`;
     }
+    return '最新データ';
   };
 
-  useEffect(() => {
-    fetchDatabaseStats();
-  }, []);
+  // レガシー関数を削除（useDataCacheで置き換え）
+
+  // データは useDataCache で自動管理されるため、useEffect は不要
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
@@ -177,36 +143,41 @@ export default function DatabasePage() {
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="h-screen overflow-hidden bg-gray-50">
         <AppHeader title="データベース管理" />
-        
-        <main className="px-4 sm:px-6 lg:px-8 py-8">
+
+        <main className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)]">
           <div className="max-w-7xl mx-auto space-y-8">
-            
+
             {/* Header */}
-            <GradientHeader
-              title="データベース管理"
-              subtitle="Firestore データベースの監視・バックアップ・最適化"
-              icon={Database}
-              gradient="from-slate-800 to-slate-900"
-              status={{
-                label: getHealthText(stats.systemHealth),
-                color: getHealthColor(stats.systemHealth),
-                icon: getHealthIcon(stats.systemHealth) ? CheckCircle : AlertTriangle
-              }}
-              actions={
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Database className="h-6 w-6 text-gray-700" />
+                  <div>
+                    <h1 className="text-xl font-bold text-gray-900">データベース管理</h1>
+                    <p className="text-sm text-gray-500">Firestore データベースの監視・バックアップ・最適化 • {getCacheStatusText()}</p>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    <div className={`w-2 h-2 rounded-full ${getHealthColor(stats.systemHealth)}`}></div>
+                    <span className={`text-sm font-medium ${getHealthColor(stats.systemHealth).replace('bg-', 'text-').replace('-500', '-600')}`}>
+                      {getHealthText(stats.systemHealth)}
+                    </span>
+                  </div>
+                </div>
                 <button
-                  onClick={fetchDatabaseStats}
-                  className="inline-flex items-center px-4 py-2.5 bg-slate-700/50 backdrop-blur-sm text-white rounded-xl hover:bg-slate-600/50 transition-all duration-200 border border-slate-600/30"
+                  onClick={() => refresh()}
+                  disabled={loading}
+                  className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 disabled:opacity-50"
                 >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  更新
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                  {loading ? '更新中' : '手動更新'}
                 </button>
-              }
-            />
+              </div>
+            </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <StatCard
                 label="コレクション数"
                 value={stats.totalCollections}
@@ -238,66 +209,52 @@ export default function DatabasePage() {
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-8">
+            <div className="grid grid-cols-1 gap-4">
               {/* Collection Details */}
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-8">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="p-3 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl shadow-lg">
-                    <Database className="h-6 w-6 text-white" />
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900">コレクション詳細</h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Database className="h-5 w-5 text-gray-700" />
+                  <h2 className="text-base font-semibold text-gray-900">コレクション詳細</h2>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">users</p>
-                        <p className="text-xs text-slate-500">ユーザー情報</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {stats.collectionDetails.map((collection, index) => {
+                    const colors = [
+                      'bg-blue-50 border-blue-200 text-blue-600',
+                      'bg-green-50 border-green-200 text-green-600',
+                      'bg-purple-50 border-purple-200 text-purple-600',
+                      'bg-orange-50 border-orange-200 text-orange-600',
+                      'bg-indigo-50 border-indigo-200 text-indigo-600',
+                      'bg-pink-50 border-pink-200 text-pink-600'
+                    ];
+                    const colorClass = colors[index % colors.length];
+
+                    return (
+                      <div key={collection.name} className={`p-3 rounded-lg border ${colorClass.split(' ')[0]} ${colorClass.split(' ')[1]}`}>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">{collection.name}</p>
+                            <p className="text-xs text-gray-500">{collection.documentCount}件のドキュメント</p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`text-sm font-bold ${colorClass.split(' ')[2]}`}>{collection.status}</p>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-blue-600">アクティブ</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl border border-emerald-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">shops</p>
-                        <p className="text-xs text-slate-500">店舗情報</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-emerald-600">アクティブ</p>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-200">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-slate-700">shifts</p>
-                        <p className="text-xs text-slate-500">シフト管理</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-purple-600">アクティブ</p>
-                      </div>
-                    </div>
-                  </div>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* System Health */}
-              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-8">
-                <div className="flex items-center space-x-3 mb-6">
-                  <div className="p-3 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl shadow-lg">
-                    <Activity className="h-6 w-6 text-white" />
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900">システム状態</h2>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center space-x-3 mb-4">
+                  <Activity className="h-5 w-5 text-gray-700" />
+                  <h2 className="text-base font-semibold text-gray-900">システム状態</h2>
                 </div>
 
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-200">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
                     <div className="flex items-center space-x-3">
                       <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                       <div>
@@ -333,12 +290,13 @@ export default function DatabasePage() {
 
                 {/* Quick Actions */}
                 <div className="mt-6 grid grid-cols-1 gap-4">
-                  <button 
-                    onClick={fetchDatabaseStats}
-                    className="flex items-center justify-center space-x-2 p-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg"
+                  <button
+                    onClick={() => refresh()}
+                    disabled={loading}
+                    className="flex items-center justify-center space-x-2 p-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-xl hover:from-blue-600 hover:to-indigo-700 transition-all shadow-lg disabled:opacity-50"
                   >
-                    <RefreshCw className="h-4 w-4" />
-                    <span className="text-sm font-medium">データベース統計を更新</span>
+                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                    <span className="text-sm font-medium">{loading ? 'データベース統計を更新中' : 'データベース統計を更新'}</span>
                   </button>
                 </div>
               </div>

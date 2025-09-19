@@ -83,32 +83,10 @@ export default function LogsPage() {
 
     try {
       await deleteDoc(doc(db, 'system_logs', logId));
-      
-      // Remove from local state
-      // Refresh logs after deletion
+
+      // Refresh logs after deletion - filtering will be handled automatically by useEffect
       refreshLogs();
-      setFilteredLogs(updatedLogs.filter(log => {
-        let matches = true;
-        
-        if (searchTerm) {
-          matches = matches && (
-            log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            log.userName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            log.errorMessage?.toLowerCase().includes(searchTerm.toLowerCase())
-          );
-        }
-        
-        if (levelFilter !== 'all') {
-          matches = matches && log.level === levelFilter;
-        }
-        
-        if (categoryFilter !== 'all') {
-          matches = matches && log.category === categoryFilter;
-        }
-        
-        return matches;
-      }));
-      
+
       // Log the deletion action
       if (currentUser) {
         console.log(`Log deleted: ${action} by ${currentUser.name}`);
@@ -216,9 +194,9 @@ export default function LogsPage() {
   if (loading) {
     return (
       <ProtectedRoute allowedRoles={['root']}>
-        <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+        <div className="min-h-screen bg-gray-50">
           <AppHeader title="ログ管理" />
-          <main className="px-4 sm:px-6 lg:px-8 py-8">
+          <main className="px-4 sm:px-6 lg:px-8 py-4">
             <div className="flex items-center justify-center min-h-64">
               <LoadingSpinner text="ログデータを読み込み中..." size="lg" />
             </div>
@@ -230,38 +208,42 @@ export default function LogsPage() {
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="min-h-screen bg-gray-50">
         <AppHeader title="ログ管理" />
-        
-        <main className="px-4 sm:px-6 lg:px-8 py-8">
+
+        <main className="px-4 sm:px-6 lg:px-8 py-4">
           <div className="max-w-7xl mx-auto space-y-8">
-            
-            {/* Header */}
-            <GradientHeader
-              title="ログ管理"
-              subtitle="システムログとエラー監視・アクティビティ追跡"
-              icon={FileText}
-              gradient="from-gray-600 to-slate-700"
-              iconBackground="from-gray-800 to-gray-900"
-              actions={
+
+            {/* Header - Responsive */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+                <div className="flex items-center space-x-3">
+                  <FileText className="h-6 w-6 text-gray-700" />
+                  <div>
+                    <h1 className="text-xl font-bold text-gray-900">ログ管理</h1>
+                    <p className="text-sm text-gray-500">システムログとエラー監視・アクティビティ追跡</p>
+                  </div>
+                </div>
                 <div className="flex space-x-2">
                   <button
                     onClick={refreshLogs}
-                    className="inline-flex items-center px-4 py-2 bg-gray-800/50 text-white rounded-lg hover:bg-gray-700/50 transition-all duration-200"
+                    className="inline-flex items-center px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm"
                   >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    更新
+                    <RefreshCw className="h-4 w-4 mr-1 sm:mr-2" />
+                    <span className="hidden sm:inline">更新</span>
+                    <span className="sm:hidden">更新</span>
                   </button>
-                  <button className="inline-flex items-center px-4 py-2 bg-gray-800/50 text-white rounded-lg hover:bg-gray-700/50 transition-all duration-200">
-                    <Download className="h-4 w-4 mr-2" />
-                    エクスポート
+                  <button className="inline-flex items-center px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm">
+                    <Download className="h-4 w-4 mr-1 sm:mr-2" />
+                    <span className="hidden sm:inline">エクスポート</span>
+                    <span className="sm:hidden">出力</span>
                   </button>
                 </div>
-              }
-            />
+              </div>
+            </div>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {/* Stats Cards - Responsive Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
               {logStats.map((stat, index) => (
                 <StatCard
                   key={index}
@@ -275,9 +257,9 @@ export default function LogsPage() {
               ))}
             </div>
 
-            {/* Filters */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 p-6">
-              <div className="flex flex-col md:flex-row gap-4">
+            {/* Filters - Responsive */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
+              <div className="space-y-4 sm:space-y-0 sm:flex sm:gap-4">
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -286,17 +268,17 @@ export default function LogsPage() {
                       placeholder="ログメッセージまたはユーザー名で検索..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="w-full pl-10 pr-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base sm:text-sm"
                     />
                   </div>
                 </div>
-                <div className="flex gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:flex sm:gap-4">
                   <select
                     value={levelFilter}
                     onChange={(e) => setLevelFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                   >
-                    <option value="all">全てのレベル</option>
+                    <option value="all">全レベル</option>
                     <option value="info">情報</option>
                     <option value="warn">警告</option>
                     <option value="error">エラー</option>
@@ -305,9 +287,9 @@ export default function LogsPage() {
                   <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
                   >
-                    <option value="all">全てのカテゴリ</option>
+                    <option value="all">全カテゴリ</option>
                     <option value="system">システム</option>
                     <option value="user">ユーザー</option>
                     <option value="auth">認証</option>
@@ -318,27 +300,27 @@ export default function LogsPage() {
               </div>
             </div>
 
-            {/* Log Entries */}
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-white/20 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
+            {/* Log Entries - Responsive */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">
                   ログエントリ ({filteredLogs.length}件)
                 </h3>
               </div>
-              
-              <div className="max-h-96 overflow-y-auto">
+
+              <div className="max-h-96 sm:max-h-[500px] overflow-y-auto">
                 {filteredLogs.map((log) => (
-                  <div key={log.id} className="px-6 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                  <div key={log.id} className="px-4 sm:px-6 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors">
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-4 flex-1">
-                        <div className="flex items-center space-x-2">
+                      <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
+                        <div className="flex items-center space-x-2 flex-shrink-0">
                           {getLevelIcon(log.level)}
                           {getCategoryIcon(log.category)}
                         </div>
-                        
+
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center space-x-3 mb-1">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLevelColor(log.level)}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-3 mb-2">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLevelColor(log.level)} w-fit`}>
                               {log.level}
                             </span>
                             <span className="text-xs text-gray-500 capitalize">{log.category}</span>
@@ -347,27 +329,27 @@ export default function LogsPage() {
                               {formatDate(log.timestamp)}
                             </div>
                           </div>
-                          
-                          <p className="text-sm text-gray-900 mb-2">{log.action}</p>
-                          
+
+                          <p className="text-sm sm:text-base text-gray-900 mb-2 font-medium break-words">{log.action}</p>
+
                           {log.errorMessage && (
-                            <p className="text-sm text-red-600 mb-2">エラー: {log.errorMessage}</p>
+                            <p className="text-sm text-red-600 mb-2 break-words">エラー: {log.errorMessage}</p>
                           )}
-                          
+
                           {log.resource && (
-                            <p className="text-xs text-gray-600 mb-2">リソース: {log.resource}</p>
+                            <p className="text-xs text-gray-600 mb-2 break-words">リソース: {log.resource}</p>
                           )}
-                          
+
                           {log.userName && (
                             <div className="flex items-center text-xs text-gray-600 mb-2">
-                              <User className="h-3 w-3 mr-1" />
-                              <span>{log.userName}</span>
-                              {log.userId && <span className="ml-1">({log.userId})</span>}
+                              <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                              <span className="break-words">{log.userName}</span>
+                              {log.userId && <span className="ml-1 text-gray-400">({log.userId})</span>}
                             </div>
                           )}
-                          
+
                           {log.details && (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-gray-500 break-words">
                               <span className="font-medium">詳細: </span>
                               {(() => {
                                 try {
@@ -387,9 +369,9 @@ export default function LogsPage() {
                                       } catch (e) {
                                         displayValue = '[オブジェクト]';
                                       }
-                                      
+
                                       return (
-                                        <span key={key} className="mr-3">
+                                        <span key={key} className="mr-3 block sm:inline">
                                           {String(key)}: {displayValue}
                                         </span>
                                       );
@@ -404,16 +386,16 @@ export default function LogsPage() {
                             </div>
                           )}
                         </div>
-                        
-                        <div className="flex-shrink-0 ml-4">
-                          <button
-                            onClick={() => handleDeleteLog(log.id, log.action)}
-                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
-                            title="このログを削除"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
+                      </div>
+
+                      <div className="flex-shrink-0 ml-2 sm:ml-4">
+                        <button
+                          onClick={() => handleDeleteLog(log.id, log.action)}
+                          className="p-2 sm:p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                          title="このログを削除"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -421,10 +403,10 @@ export default function LogsPage() {
               </div>
               
               {filteredLogs.length === 0 && (
-                <div className="px-6 py-12 text-center">
+                <div className="px-4 sm:px-6 py-12 text-center">
                   <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">ログが見つかりません</h3>
-                  <p className="text-gray-500">検索条件を変更してください</p>
+                  <p className="text-sm sm:text-base text-gray-500">検索条件を変更してください</p>
                 </div>
               )}
             </div>

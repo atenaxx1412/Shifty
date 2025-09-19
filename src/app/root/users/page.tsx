@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
@@ -41,6 +41,12 @@ export default function UsersPage() {
   const [editingUser, setEditingUser] = useState<UserWithId | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
 
+  // スワイプ機能用の状態
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [touchStartY, setTouchStartY] = useState<number | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // Use the custom hook for users data
   const { data: users, loading, refresh: refreshUsers } = useFirebaseData<UserWithId>('users');
 
@@ -49,12 +55,12 @@ export default function UsersPage() {
     setFilteredUsers(users);
   }, [users]);
 
-  // Filter users based on search and role
+  // Filter and sort users based on search and role
   useEffect(() => {
     let filtered = users;
 
     if (searchTerm) {
-      filtered = filtered.filter(user => 
+      filtered = filtered.filter(user =>
         user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         user.email?.toLowerCase().includes(searchTerm.toLowerCase())
       );
@@ -64,8 +70,78 @@ export default function UsersPage() {
       filtered = filtered.filter(user => user.role === roleFilter);
     }
 
+    // Sort by newest first (using updatedAt, createdAt, or id as fallback)
+    filtered = filtered.sort((a, b) => {
+      const aTime = a.updatedAt || a.createdAt || a.id;
+      const bTime = b.updatedAt || b.createdAt || b.id;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+
     setFilteredUsers(filtered);
   }, [users, searchTerm, roleFilter]);
+
+  // スワイプハンドラー
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    setTouchStartX(touch.clientX);
+    setTouchStartY(touch.clientY);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartX || !touchStartY) return;
+
+    const touch = e.touches[0];
+    const diffX = touchStartX - touch.clientX;
+    const diffY = touchStartY - touch.clientY;
+
+    // 垂直スクロールを優先（縦の動きが横の動きより大きい場合）
+    if (Math.abs(diffY) > Math.abs(diffX)) {
+      return;
+    }
+
+    // 横スワイプの場合、ページスクロールを防ぐ
+    if (Math.abs(diffX) > 10) {
+      e.preventDefault();
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartX || !touchStartY || isAnimating) return;
+
+    const touch = e.changedTouches[0];
+    const diffX = touchStartX - touch.clientX;
+    const diffY = touchStartY - touch.clientY;
+
+    // 垂直スクロールを優先
+    if (Math.abs(diffY) > Math.abs(diffX)) {
+      setTouchStartX(null);
+      setTouchStartY(null);
+      return;
+    }
+
+    const minSwipeDistance = 50;
+
+    if (Math.abs(diffX) > minSwipeDistance) {
+      setIsAnimating(true);
+
+      if (diffX > 0) {
+        // 左スワイプ - 次のページ
+        window.history.pushState(null, '', '/root/database');
+        window.location.href = '/root/database';
+      } else {
+        // 右スワイプ - 前のページ
+        window.history.pushState(null, '', '/root');
+        window.location.href = '/root';
+      }
+
+      setTimeout(() => {
+        setIsAnimating(false);
+      }, 300);
+    }
+
+    setTouchStartX(null);
+    setTouchStartY(null);
+  };
 
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('このユーザーを削除してもよろしいですか？')) return;
@@ -181,39 +257,80 @@ export default function UsersPage() {
 
   return (
     <ProtectedRoute allowedRoles={['root']}>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="h-screen overflow-hidden bg-gray-50">
         <AppHeader title="ユーザー管理" />
-        
-        <main className="px-4 sm:px-6 lg:px-8 py-8">
+
+        <main
+          ref={containerRef}
+          className="px-4 sm:px-6 lg:px-8 py-4 h-[calc(100vh-4rem)]"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: isAnimating ? 'translateX(-20px)' : 'translateX(0)',
+            transition: isAnimating ? 'transform 0.3s ease-out' : 'none'
+          }}
+        >
           <div className="max-w-7xl mx-auto space-y-8">
-            
-            {/* Header */}
-            <GradientHeader
-              title="ユーザー管理"
-              subtitle="システムユーザーの管理・権限設定・アクセス制御"
-              icon={Users}
-              actions={
-                <div className="flex space-x-3">
-                  <button
-                    onClick={refreshUsers}
-                    className="inline-flex items-center px-4 py-2.5 bg-slate-700/50 backdrop-blur-sm text-white rounded-xl hover:bg-slate-600/50 transition-all duration-200 border border-slate-600/30"
-                  >
-                    <Activity className="h-4 w-4 mr-2" />
-                    更新
-                  </button>
-                  <div className="bg-slate-100/80 backdrop-blur-sm rounded-xl px-4 py-2.5 border border-slate-300/50">
-                    <p className="text-sm text-slate-700">
-                      新規ユーザーの追加は
-                      <span className="font-bold text-teal-700 mx-1">店舗別アカウント管理</span>
-                      から行ってください
-                    </p>
+
+            {/* Header with integrated search and filters */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="space-y-4">
+                {/* Title and basic info */}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+                  <div className="flex items-center space-x-3">
+                    <Users className="h-6 w-6 text-gray-700" />
+                    <div>
+                      <h1 className="text-xl font-bold text-gray-900">ユーザー管理</h1>
+                      <p className="text-sm text-gray-500">システムユーザーの管理・権限設定・アクセス制御</p>
+                    </div>
+                  </div>
+
+                  {/* Controls row - responsive */}
+                  <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 w-full sm:w-auto">
+                    {/* Search input */}
+                    <div className="relative flex-1 sm:flex-none sm:w-64">
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="名前またはメールで検索..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all w-full text-gray-900 text-sm"
+                      />
+                    </div>
+
+                    {/* Role filter */}
+                    <div className="relative">
+                      <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <select
+                        value={roleFilter}
+                        onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
+                        className="pl-10 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent focus:bg-white transition-all appearance-none text-gray-900 text-sm min-w-[140px]"
+                      >
+                        <option value="all">全ての役割</option>
+                        <option value="root">システム管理者</option>
+                        <option value="manager">店長</option>
+                        <option value="staff">スタッフ</option>
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                    </div>
+
+                    {/* Update button */}
+                    <button
+                      onClick={refreshUsers}
+                      className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm whitespace-nowrap"
+                    >
+                      <Activity className="h-4 w-4 mr-2" />
+                      更新
+                    </button>
                   </div>
                 </div>
-              }
-            />
+              </div>
+            </div>
             
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {userStats.map((stat, index) => (
                 <StatCard
                   key={index}
@@ -227,103 +344,71 @@ export default function UsersPage() {
               ))}
             </div>
 
-            {/* Search and Filter Bar */}
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 p-6">
-              <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                <div className="flex flex-col sm:flex-row gap-4 flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder="名前またはメールで検索..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10 pr-4 py-2.5 bg-slate-50/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent focus:bg-white transition-all w-full text-slate-900"
-                    />
-                  </div>
-                  
-                  <div className="relative">
-                    <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
-                    <select
-                      value={roleFilter}
-                      onChange={(e) => setRoleFilter(e.target.value as UserRole | 'all')}
-                      className="pl-10 pr-8 py-2.5 bg-slate-50/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-teal-500 focus:border-transparent focus:bg-white transition-all appearance-none text-slate-900"
-                    >
-                      <option value="all">全ての役割</option>
-                      <option value="root">システム管理者</option>
-                      <option value="manager">店長</option>
-                      <option value="staff">スタッフ</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-                  </div>
-                </div>
-              </div>
-            </div>
 
             {/* Users Table */}
-            <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">ユーザー一覧</h3>
-                <p className="text-sm text-gray-500 mt-1">{filteredUsers.length}人のユーザーが表示されています</p>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-900">ユーザー一覧</h3>
+                <p className="text-xs text-gray-500 mt-0.5">{Math.min(filteredUsers.length, 5)}人 / {filteredUsers.length}人のユーザーが表示されています</p>
               </div>
-              
+
               {loading ? (
-                <div className="px-6 py-12">
+                <div className="px-4 py-8">
                   <LoadingSpinner text="ユーザーデータを読み込み中..." size="md" />
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {filteredUsers.map((user) => (
-                    <div key={user.id} className="bg-slate-50/80 backdrop-blur-sm rounded-xl border border-slate-200/50 p-6 hover:bg-white/90 transition-all duration-200 shadow-sm hover:shadow-md">
+                <div className="max-h-80 overflow-y-auto space-y-1.5 p-2">
+                  {filteredUsers.slice(0, 5).map((user) => (
+                    <div key={user.id} className="bg-gray-50 rounded-lg border border-gray-200 p-2.5 hover:bg-gray-100 transition-all duration-200">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-3">
                           <div className="flex-shrink-0">
-                            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-slate-600 to-slate-700 flex items-center justify-center shadow-lg">
-                              <span className="text-white font-semibold text-lg">
+                            <div className="h-8 w-8 rounded-lg bg-gray-600 flex items-center justify-center">
+                              <span className="text-white font-medium text-xs">
                                 {user.name?.charAt(0) || 'U'}
                               </span>
                             </div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-3 mb-1">
-                              <h3 className="text-lg font-semibold text-slate-900 truncate">{user.name || 'No Name'}</h3>
+                            <div className="flex items-center space-x-2.5 mb-0.5">
+                              <h3 className="text-xs font-semibold text-gray-900 truncate">{user.name || 'No Name'}</h3>
                               {getRoleBadge(user.role)}
                             </div>
-                            <div className="flex items-center space-x-4 text-sm text-slate-600">
+                            <div className="flex items-center space-x-3 text-xs text-gray-500">
                               <div className="flex items-center">
-                                <Mail className="h-4 w-4 mr-1" />
-                                <span>{user.email}</span>
+                                <Mail className="h-3 w-3 mr-1" />
+                                <span className="text-xs">{user.email}</span>
                               </div>
                               <div className="flex items-center">
-                                <Building className="h-4 w-4 mr-1" />
-                                <span>{user.shopId || '未割り当て'}</span>
+                                <Building className="h-3 w-3 mr-1" />
+                                <span className="text-xs">{user.shopId || '未割り当て'}</span>
                               </div>
                               <div className="flex items-center">
-                                <Clock className="h-4 w-4 mr-1" />
-                                <span>{user.updatedAt ? new Date(user.updatedAt).toLocaleDateString() : '未記録'}</span>
+                                <Clock className="h-3 w-3 mr-1" />
+                                <span className="text-xs">{user.updatedAt ? new Date(user.updatedAt).toLocaleDateString() : '未記録'}</span>
                               </div>
                             </div>
                           </div>
                         </div>
-                        
-                        <div className="flex items-center space-x-2">
+
+                        <div className="flex items-center space-x-1.5">
                           <button
                             onClick={() => {
                               setEditingUser(user);
                               setShowEditModal(true);
                             }}
-                            className="p-2.5 text-teal-600 hover:text-teal-700 bg-teal-50/80 hover:bg-teal-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-teal-200/50"
+                            className="p-2 text-teal-600 hover:text-teal-700 bg-teal-50/80 hover:bg-teal-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-teal-200/50"
                             title="ユーザーを編集"
                           >
-                            <Edit className="h-4 w-4" />
+                            <Edit className="h-3.5 w-3.5" />
                           </button>
                           {user.role !== 'root' && (
                             <button
                               onClick={() => handleDeleteUser(user.id)}
-                              className="p-2.5 text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-rose-200/50"
+                              className="p-2 text-rose-600 hover:text-rose-700 bg-rose-50/80 hover:bg-rose-100/80 backdrop-blur-sm rounded-lg transition-all duration-200 border border-rose-200/50"
                               title="ユーザーを削除"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
