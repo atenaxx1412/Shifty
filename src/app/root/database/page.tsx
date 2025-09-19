@@ -240,9 +240,8 @@ export default function DatabasePage() {
                 unit="個"
                 icon={Archive}
                 gradient="from-slate-600 to-slate-700"
-                change="アクティブ"
-                trend="neutral"
-                size="sm"
+                size="xs"
+                className="[&>div>div:first-child>p]:!text-[0.6rem] sm:[&>div>div:first-child>p]:!text-xs [&>div]:!items-center"
               />
               <StatCard
                 label="ドキュメント"
@@ -250,9 +249,8 @@ export default function DatabasePage() {
                 unit="件"
                 icon={FileText}
                 gradient="from-teal-500 to-cyan-600"
-                change="全体"
-                trend="neutral"
-                size="sm"
+                size="xs"
+                className="[&>div>div:first-child>p]:!text-[0.6rem] sm:[&>div>div:first-child>p]:!text-xs [&>div]:!items-center"
               />
               <StatCard
                 label="ストレージ"
@@ -261,7 +259,8 @@ export default function DatabasePage() {
                 icon={HardDrive}
                 gradient="from-emerald-500 to-teal-600"
                 trend={stats.storageUsed / stats.storageLimit > 0.8 ? 'up' : 'neutral'}
-                size="sm"
+                size="xs"
+                className="[&>div>div:first-child>p]:!text-[0.6rem] sm:[&>div>div:first-child>p]:!text-xs [&>div]:!items-center [&>div>div:first-child>p>span]:!text-[0.5rem] sm:[&>div>div:first-child>p>span]:!text-xs"
               />
             </div>
 

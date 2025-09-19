@@ -25,13 +25,11 @@ export const fetchOptimizedDatabaseStats = async (): Promise<DatabaseStats> => {
   try {
     console.log('📊 Fetching optimized database stats...');
 
-    // 主要コレクション一覧
+    // 主要コレクション一覧（activityLogs, system_logsを除外）
     const collectionNames = [
       'users',
-      'activityLogs',
       'shifts_extended',
       'systemSettings',
-      'system_logs',
       'budgetCalculations'
     ];
 

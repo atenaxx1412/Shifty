@@ -9,7 +9,7 @@ interface StatCardProps {
   gradient: string;
   change?: string;
   trend?: 'up' | 'down' | 'neutral';
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }
 
@@ -25,12 +25,18 @@ export default function StatCard({
   className = ''
 }: StatCardProps) {
   const sizeClasses = {
+    xs: 'p-2 py-3 lg:p-3 lg:py-4',
     sm: 'p-3 lg:p-4 lg:py-5',
     md: 'p-3 lg:p-4 lg:py-6',
     lg: 'p-4 lg:p-5 lg:py-7'
   };
 
   const textSizes = {
+    xs: {
+      value: 'text-xs lg:text-sm',
+      label: 'text-xs lg:text-xs whitespace-nowrap',
+      change: 'text-xs'
+    },
     sm: {
       value: 'text-lg lg:text-xl',
       label: 'text-xs lg:text-sm',
@@ -48,6 +54,25 @@ export default function StatCard({
     }
   };
 
+  const iconSizes = {
+    xs: {
+      container: 'p-1.5 lg:p-3',
+      icon: 'h-3 w-3 lg:h-5 lg:w-5'
+    },
+    sm: {
+      container: 'p-2 lg:p-3',
+      icon: 'h-4 w-4 lg:h-5 lg:w-5'
+    },
+    md: {
+      container: 'p-2 lg:p-3',
+      icon: 'h-4 w-4 lg:h-5 lg:w-5'
+    },
+    lg: {
+      container: 'p-3 lg:p-4',
+      icon: 'h-5 w-5 lg:h-6 lg:w-6'
+    }
+  };
+
   const getTrendColor = (trend: string) => {
     switch (trend) {
       case 'up': return 'text-green-600';
@@ -57,9 +82,9 @@ export default function StatCard({
   };
 
   return (
-    <div className={`bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 ${sizeClasses[size]} ${className}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
+    <div className={`bg-white/90 backdrop-blur-sm rounded-2xl shadow-lg border border-slate-200/50 ${sizeClasses[size]} ${size === 'xs' ? 'min-h-[4rem] flex flex-col justify-center' : ''} ${className}`}>
+      <div className="flex items-center justify-between h-full">
+        <div className={`flex-1 ${size === 'xs' ? 'flex flex-col justify-center' : ''}`}>
           <p className={`font-medium text-slate-600 mb-0 ${textSizes[size].label}`}>
             {label}
           </p>
@@ -84,8 +109,8 @@ export default function StatCard({
               <span>{change}</span>
             </div>
           )}
-          <div className={`p-2 lg:p-3 rounded-xl bg-gradient-to-br ${gradient} shadow-lg`}>
-            <Icon className="h-4 w-4 lg:h-5 lg:w-5 text-white" />
+          <div className={`${iconSizes[size].container} rounded-xl bg-gradient-to-br ${gradient} shadow-lg`}>
+            <Icon className={`${iconSizes[size].icon} text-white`} />
           </div>
         </div>
       </div>
