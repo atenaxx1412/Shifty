@@ -1,6 +1,6 @@
 // Debug script to check Firestore user data
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, getDocs, query, where } = require('firebase/firestore');
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs, query, where } from 'firebase/firestore';
 
 const firebaseConfig = {
   // This is temporary for debugging - normally loaded from env

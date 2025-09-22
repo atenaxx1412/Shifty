@@ -46,6 +46,15 @@ export const db = getFirestore(app);
    - `['managerId', 'period.start', 'period.end', '__name__']`
    - 目的: 期間別予算計算
 
+4. **simpleChatRooms コレクション**
+   - `['managerId', 'updatedAt', '__name__']`
+   - `['staffId', 'updatedAt', '__name__']`
+   - 目的: チャットルーム一覧高速取得
+
+5. **simpleChatMessages コレクション**
+   - `['chatRoomId', 'timestamp', '__name__']`
+   - 目的: 時系列メッセージ取得
+
 ## コレクション設計
 
 ### 1. users コレクション
@@ -241,6 +250,76 @@ interface SystemSettings {
 }
 ```
 
+### 8. simpleChatRooms コレクション
+
+**主要用途**: マネージャー-スタッフ間の1対1チャットルーム管理
+
+```typescript
+interface SimpleChatRoom {
+  id?: string;                    // Firestore自動生成ID
+  managerId: string;              // マネージャーのUID
+  staffId: string;                // スタッフのUID
+  managerName: string;            // マネージャー表示名
+  staffName: string;              // スタッフ表示名
+  lastMessage?: {
+    content: string;              // 最新メッセージ内容
+    timestamp: Timestamp;         // 送信時刻
+    senderId: string;             // 送信者UID
+  };
+  unreadCount: {
+    [userId: string]: number;     // ユーザー別未読数
+  };
+  createdAt: Timestamp;           // ルーム作成日時
+  updatedAt: Timestamp;           // 最終更新日時
+}
+```
+
+**重要なクエリパターン:**
+```typescript
+// マネージャー側ルーム一覧
+const managerRoomsQuery = query(
+  collection(db, 'simpleChatRooms'),
+  where('managerId', '==', managerId),
+  orderBy('updatedAt', 'desc')
+);
+
+// スタッフ側ルーム一覧
+const staffRoomsQuery = query(
+  collection(db, 'simpleChatRooms'),
+  where('staffId', '==', staffId),
+  orderBy('updatedAt', 'desc')
+);
+```
+
+### 9. simpleChatMessages コレクション
+
+**主要用途**: チャットメッセージの保存と履歴管理
+
+```typescript
+interface SimpleChatMessage {
+  id?: string;                    // Firestore自動生成ID
+  chatRoomId: string;             // 所属チャットルームID
+  senderId: string;               // 送信者UID
+  senderName: string;             // 送信者表示名
+  senderRole: 'manager' | 'staff'; // 送信者役割
+  content: string;                // メッセージ内容
+  timestamp: Timestamp;           // 送信時刻
+  read: boolean;                  // 既読状態
+}
+```
+
+**重要なクエリパターン:**
+```typescript
+// 時系列メッセージ取得（1.5ヶ月制限）
+const messagesQuery = query(
+  collection(db, 'simpleChatMessages'),
+  where('chatRoomId', '==', roomId),
+  where('timestamp', '>=', oneAndHalfMonthsAgo),
+  orderBy('timestamp', 'asc'),
+  limit(100)
+);
+```
+
 ## データアクセス制御パターン
 
 ### 役割ベースアクセス制御（RBAC）
@@ -299,6 +378,8 @@ const getManagerData = async (managerId: string) => {
 - `shifts`: `['managerId', 'date']` - 日付範囲クエリ用
 - `users`: `['managerId', 'role']` - スタッフ一覧用
 - `shiftRequests`: `['managerId', 'status']` - 承認待ち取得用
+- `simpleChatRooms`: `['managerId', 'updatedAt']`, `['staffId', 'updatedAt']` - チャット一覧用
+- `simpleChatMessages`: `['chatRoomId', 'timestamp']` - メッセージ履歴用
 
 ### 2. JavaScript側フィルタリング
 
@@ -385,6 +466,23 @@ service cloud.firestore {
         resource.data.managerId == request.auth.uid
       );
     }
+
+    // Chat rooms collection
+    match /simpleChatRooms/{roomId} {
+      allow read, write: if request.auth != null && (
+        resource.data.managerId == request.auth.uid ||
+        resource.data.staffId == request.auth.uid
+      );
+    }
+
+    // Chat messages collection
+    match /simpleChatMessages/{messageId} {
+      allow read, create: if request.auth != null && (
+        exists(/databases/$(database)/documents/simpleChatRooms/$(resource.data.chatRoomId)) &&
+        (get(/databases/$(database)/documents/simpleChatRooms/$(resource.data.chatRoomId)).data.managerId == request.auth.uid ||
+         get(/databases/$(database)/documents/simpleChatRooms/$(resource.data.chatRoomId)).data.staffId == request.auth.uid)
+      );
+    }
   }
 }
 ```
@@ -448,6 +546,6 @@ const monitorConnection = () => {
 
 ---
 
-**最終更新**: 2025年9月18日
-**バージョン**: v2.0
+**最終更新**: 2025年9月21日
+**バージョン**: v2.1 - チャット機能追加
 **担当**: システムアーキテクチャチーム

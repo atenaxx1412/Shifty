@@ -1,8 +1,8 @@
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, doc, setDoc } = require('firebase/firestore');
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, doc, setDoc } from 'firebase/firestore';
 
 // 環境変数を読み込み
-require('dotenv').config();
+import 'dotenv/config';
 
 // Firebase設定（環境変数から取得）
 const firebaseConfig = {

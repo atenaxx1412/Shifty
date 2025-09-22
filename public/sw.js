@@ -90,45 +90,164 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
-// プッシュ通知処理（将来の拡張用）
+// プッシュ通知処理
 self.addEventListener('push', (event) => {
+  console.log('📱 Push notification received:', event);
+
   if (event.data) {
     const data = event.data.json();
+    console.log('📱 Push data:', data);
+
+    // 通知設定のカスタマイズ
     const options = {
-      body: data.body,
+      body: data.body || data.notification?.body || 'Shiftyから新しいメッセージ',
       icon: '/images/pwa-icon-192.png',
       badge: '/images/pwa-icon-192.png',
-      vibrate: [100, 50, 100],
+      tag: data.data?.chatRoomId || data.data?.type || 'general',
+      renotify: true,
+      requireInteraction: false,
+      silent: false,
+      vibrate: [200, 100, 200],
       data: {
+        ...data.data,
         dateOfArrival: Date.now(),
-        primaryKey: '1'
+        url: data.data?.chatRoomId ? `/manager/chat?room=${data.data.chatRoomId}` : '/'
       },
-      actions: [
+      actions: []
+    };
+
+    // 通知タイプ別のアクション設定
+    if (data.data?.type === 'chat') {
+      options.actions = [
         {
-          action: 'explore',
+          action: 'open_chat',
+          title: '返信',
+          icon: '/images/pwa-icon-192.png'
+        },
+        {
+          action: 'mark_read',
+          title: '既読にする'
+        }
+      ];
+    } else {
+      options.actions = [
+        {
+          action: 'open',
           title: '確認',
           icon: '/images/pwa-icon-192.png'
         },
         {
-          action: 'close',
+          action: 'dismiss',
           title: '閉じる'
         }
-      ]
-    };
+      ];
+    }
+
+    // バッジ数の更新
+    if (data.data?.badge !== undefined) {
+      const badgeCount = parseInt(data.data.badge) || 0;
+      if ('setAppBadge' in self.navigator) {
+        if (badgeCount > 0) {
+          self.navigator.setAppBadge(badgeCount);
+        } else {
+          self.navigator.clearAppBadge();
+        }
+      }
+    }
 
     event.waitUntil(
-      self.registration.showNotification(data.title, options)
+      self.registration.showNotification(
+        data.title || data.notification?.title || 'Shifty',
+        options
+      )
     );
   }
 });
 
 // 通知クリック処理
 self.addEventListener('notificationclick', (event) => {
+  console.log('🔔 Notification clicked:', event.action, event.notification.data);
+
   event.notification.close();
 
-  if (event.action === 'explore') {
+  const notificationData = event.notification.data || {};
+  let targetUrl = notificationData.url || '/';
+
+  // アクション別の処理
+  switch (event.action) {
+    case 'open_chat':
+    case 'open':
+      // チャットを開く、または通常の確認
+      break;
+
+    case 'mark_read':
+      // 既読にする処理（将来的にはAPIコール）
+      console.log('📖 Marking as read:', notificationData.chatRoomId);
+      return; // ウィンドウを開かずに終了
+
+    case 'dismiss':
+      // 何もしない
+      return;
+
+    default:
+      // デフォルトアクション（通知自体のクリック）
+      break;
+  }
+
+  // 既存のクライアントを探してフォーカス、または新しいウィンドウを開く
+  event.waitUntil(
+    clients.matchAll({
+      type: 'window',
+      includeUncontrolled: true
+    }).then((clientList) => {
+      // 既存のクライアントを探す
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin)) {
+          // 既存のクライアントをフォーカスして適切なページにナビゲート
+          return client.focus().then(() => {
+            if (client.navigate && targetUrl !== '/') {
+              return client.navigate(targetUrl);
+            }
+          });
+        }
+      }
+
+      // 既存のクライアントがない場合は新しいウィンドウを開く
+      return clients.openWindow(targetUrl);
+    })
+  );
+});
+
+// バックグラウンド同期（将来の拡張用）
+self.addEventListener('sync', (event) => {
+  console.log('🔄 Background sync:', event.tag);
+
+  if (event.tag === 'background-message-sync') {
     event.waitUntil(
-      clients.openWindow('/')
+      // メッセージの同期処理
+      console.log('📱 Syncing messages in background')
     );
+  }
+});
+
+// アプリバッジのクリア（アプリがアクティブになった時）
+self.addEventListener('message', (event) => {
+  console.log('📨 SW Message received:', event.data);
+
+  if (event.data && event.data.type === 'CLEAR_BADGE') {
+    if ('clearAppBadge' in self.navigator) {
+      self.navigator.clearAppBadge();
+    }
+  }
+
+  if (event.data && event.data.type === 'UPDATE_BADGE') {
+    const count = event.data.count || 0;
+    if ('setAppBadge' in self.navigator) {
+      if (count > 0) {
+        self.navigator.setAppBadge(count);
+      } else {
+        self.navigator.clearAppBadge();
+      }
+    }
   }
 });

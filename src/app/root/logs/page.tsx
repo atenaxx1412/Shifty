@@ -4,26 +4,21 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { collection, getDocs, query, orderBy, limit, doc, updateDoc, where } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, doc, updateDoc, where, addDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
   MessageCircle,
-  Search,
-  Filter,
   RefreshCw,
   AlertTriangle,
-  Info,
   CheckCircle,
   Clock,
   User,
   Mail,
   Eye,
-  EyeOff,
   Star,
   Building,
-  MessageSquare,
-  Users,
-  Calendar
+  Reply,
+  Send
 } from 'lucide-react';
 import GradientHeader from '@/components/ui/GradientHeader';
 import StatCard from '@/components/ui/StatCard';
@@ -48,18 +43,33 @@ interface InquiryEntry {
 export default function InquiriesPage() {
   const { currentUser } = useAuth();
   const [filteredInquiries, setFilteredInquiries] = useState<InquiryEntry[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [priorityFilter, setPriorityFilter] = useState<string>('all');
-  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  // Reply functionality states
+  const [replyModalOpen, setReplyModalOpen] = useState(false);
+  const [replyingToInquiry, setReplyingToInquiry] = useState<InquiryEntry | null>(null);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [repliedInquiries, setRepliedInquiries] = useState<Set<string>>(new Set());
 
   // Use the custom hook for inquiries data
   const { data: inquiries, loading, refresh: refreshInquiries } = useFirebaseData<InquiryEntry>('inquiries');
 
+  // Load replied inquiries from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('repliedInquiries');
+      if (stored) {
+        const repliedIds = JSON.parse(stored) as string[];
+        setRepliedInquiries(new Set(repliedIds));
+      }
+    } catch (error) {
+      console.error('Error loading replied inquiries:', error);
+    }
+  }, []);
+
   // Initialize filtered inquiries when inquiries data changes
   useEffect(() => {
-    setFilteredInquiries(inquiries.map(inquiry => {
+    const processedInquiries = inquiries.map(inquiry => {
       const inquiryData = inquiry as any;
       return {
         id: inquiryData.id,
@@ -75,7 +85,9 @@ export default function InquiriesPage() {
         shopName: inquiryData.shopName,
         shopId: inquiryData.shopId
       } as InquiryEntry;
-    }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()));
+    }).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+    setFilteredInquiries(processedInquiries);
   }, [inquiries]);
 
   // Mark inquiry as read
@@ -118,44 +130,67 @@ export default function InquiriesPage() {
     }
   };
 
-  // Filter inquiries based on search and filters
-  useEffect(() => {
-    let filtered = inquiries;
+  // Open reply modal
+  const handleReplyClick = (inquiry: InquiryEntry) => {
+    setReplyingToInquiry(inquiry);
+    setReplyMessage('');
+    setReplyModalOpen(true);
+  };
 
-    if (searchTerm) {
-      filtered = filtered.filter(inquiry =>
-        inquiry.subject?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inquiry.message?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inquiry.fromUserName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inquiry.shopName?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+  // Send reply
+  const handleSendReply = async () => {
+    if (!replyingToInquiry || !replyMessage.trim() || !currentUser) return;
+
+    setSendingReply(true);
+    try {
+      // Add reply to replies collection
+      await addDoc(collection(db, 'replies'), {
+        inquiryId: replyingToInquiry.id,
+        message: replyMessage.trim(),
+        fromUserId: currentUser.uid,
+        fromUserName: 'システム管理者',
+        fromRole: 'root',
+        timestamp: new Date(),
+        toUserId: replyingToInquiry.fromUserId,
+        toUserName: replyingToInquiry.fromUserName
+      });
+
+      // Mark inquiry as read if it was unread
+      if (replyingToInquiry.status === 'unread') {
+        await updateDoc(doc(db, 'inquiries', replyingToInquiry.id), {
+          status: 'read',
+          readAt: new Date(),
+          readBy: currentUser.uid
+        });
+      }
+
+      // Mark as replied in localStorage
+      const newRepliedInquiries = new Set(repliedInquiries);
+      newRepliedInquiries.add(replyingToInquiry.id);
+      setRepliedInquiries(newRepliedInquiries);
+
+      try {
+        localStorage.setItem('repliedInquiries', JSON.stringify(Array.from(newRepliedInquiries)));
+      } catch (error) {
+        console.error('Error saving replied inquiry:', error);
+      }
+
+      // Close modal and refresh
+      setReplyModalOpen(false);
+      setReplyingToInquiry(null);
+      setReplyMessage('');
+      refreshInquiries();
+
+      alert('返信を送信しました');
+      console.log(`Reply sent for inquiry: ${replyingToInquiry.id}`);
+    } catch (error) {
+      console.error('Error sending reply:', error);
+      alert('返信の送信に失敗しました');
+    } finally {
+      setSendingReply(false);
     }
+  };
 
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(inquiry => inquiry.status === statusFilter);
-    }
-
-    if (roleFilter !== 'all') {
-      filtered = filtered.filter(inquiry => inquiry.fromRole === roleFilter);
-    }
-
-    if (priorityFilter !== 'all') {
-      filtered = filtered.filter(inquiry => inquiry.priority === priorityFilter);
-    }
-
-    if (categoryFilter !== 'all') {
-      filtered = filtered.filter(inquiry => inquiry.category === categoryFilter);
-    }
-
-    // Sort by timestamp (newest first)
-    filtered = filtered.sort((a, b) => {
-      const aTime = a.timestamp?.getTime ? a.timestamp.getTime() : new Date(a.timestamp).getTime();
-      const bTime = b.timestamp?.getTime ? b.timestamp.getTime() : new Date(b.timestamp).getTime();
-      return bTime - aTime;
-    });
-
-    setFilteredInquiries(filtered);
-  }, [inquiries, searchTerm, statusFilter, roleFilter, priorityFilter, categoryFilter]);
 
   const getStatusIcon = (status: InquiryEntry['status']) => {
     switch (status) {
@@ -266,15 +301,15 @@ export default function InquiriesPage() {
 
             {/* Header - Responsive */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
-                <div className="flex items-center space-x-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3 flex-1 min-w-0">
                   <MessageCircle className="h-6 w-6 text-gray-700" />
-                  <div>
+                  <div className="min-w-0">
                     <h1 className="text-xl font-bold text-gray-900">お問い合わせ確認</h1>
-                    <p className="text-sm text-gray-500">マネージャーとスタッフからのお問い合わせ管理</p>
+                    <p className="text-sm text-gray-500 hidden sm:block">マネージャーとスタッフからのお問い合わせ管理</p>
                   </div>
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex-shrink-0 ml-3">
                   <button
                     onClick={refreshInquiries}
                     className="inline-flex items-center px-3 sm:px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 text-sm"
@@ -302,66 +337,6 @@ export default function InquiriesPage() {
               ))}
             </div>
 
-            {/* Filters - Responsive */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
-              <div className="space-y-4">
-                <div className="flex-1">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="件名、内容、送信者名、店舗名で検索..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base sm:text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
-                  >
-                    <option value="all">全ステータス</option>
-                    <option value="unread">未読</option>
-                    <option value="read">確認済み</option>
-                    <option value="resolved">解決済み</option>
-                  </select>
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
-                  >
-                    <option value="all">全権限</option>
-                    <option value="manager">マネージャー</option>
-                    <option value="staff">スタッフ</option>
-                  </select>
-                  <select
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value)}
-                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
-                  >
-                    <option value="all">全優先度</option>
-                    <option value="urgent">緊急</option>
-                    <option value="high">高</option>
-                    <option value="normal">通常</option>
-                    <option value="low">低</option>
-                  </select>
-                  <select
-                    value={categoryFilter}
-                    onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-3 sm:px-4 py-2.5 sm:py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-base sm:text-sm"
-                  >
-                    <option value="all">全カテゴリ</option>
-                    <option value="technical">技術的</option>
-                    <option value="schedule">スケジュール</option>
-                    <option value="policy">ポリシー</option>
-                    <option value="other">その他</option>
-                  </select>
-                </div>
-              </div>
-            </div>
 
             {/* Inquiry Entries - Responsive */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -373,74 +348,164 @@ export default function InquiriesPage() {
 
               <div className="max-h-96 sm:max-h-[500px] overflow-y-auto">
                 {filteredInquiries.map((inquiry) => (
-                  <div key={inquiry.id} className="px-4 sm:px-6 py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-3 sm:space-x-4 flex-1 min-w-0">
-                        <div className="flex items-center space-x-2 flex-shrink-0">
+                  <div key={inquiry.id} className="px-3 sm:px-6 py-3 sm:py-4 border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                    {/* Mobile Layout */}
+                    <div className="block sm:hidden">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex items-center space-x-2">
                           {getStatusIcon(inquiry.status)}
                           {getRoleIcon(inquiry.fromRole)}
-                          {getPriorityIcon(inquiry.priority)}
+                          <span className="text-xs text-gray-500">{inquiry.fromRole === 'manager' ? 'マネージャー' : 'スタッフ'}</span>
                         </div>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex flex-col sm:flex-row sm:items-center space-y-1 sm:space-y-0 sm:space-x-3 mb-2">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(inquiry.status)} w-fit`}>
-                              {inquiry.status === 'unread' ? '未読' : inquiry.status === 'read' ? '確認済み' : '解決済み'}
-                            </span>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(inquiry.priority)} w-fit`}>
-                              {inquiry.priority === 'urgent' ? '緊急' : inquiry.priority === 'high' ? '高' : inquiry.priority === 'normal' ? '通常' : '低'}
-                            </span>
-                            <span className="text-xs text-gray-500 capitalize">{inquiry.fromRole === 'manager' ? 'マネージャー' : 'スタッフ'}</span>
-                            <div className="flex items-center text-xs text-gray-500">
-                              <Clock className="h-3 w-3 mr-1" />
-                              {formatDate(inquiry.timestamp)}
-                            </div>
-                          </div>
-
-                          <p className="text-sm sm:text-base text-gray-900 mb-2 font-medium break-words">{inquiry.subject}</p>
-
-                          <p className="text-sm text-gray-700 mb-2 break-words line-clamp-2">{inquiry.message}</p>
-
-                          <div className="flex items-center text-xs text-gray-600 mb-2">
-                            <User className="h-3 w-3 mr-1 flex-shrink-0" />
-                            <span className="break-words">{inquiry.fromUserName}</span>
-                            {inquiry.shopName && (
-                              <>
-                                <span className="mx-2">•</span>
-                                <Building className="h-3 w-3 mr-1 flex-shrink-0" />
-                                <span className="break-words">{inquiry.shopName}</span>
-                              </>
-                            )}
-                          </div>
-
-                          <div className="text-xs text-gray-500 break-words">
-                            <span className="font-medium">カテゴリ: </span>
-                            {inquiry.category === 'technical' ? '技術的' :
-                             inquiry.category === 'schedule' ? 'スケジュール' :
-                             inquiry.category === 'policy' ? 'ポリシー' : 'その他'}
-                          </div>
+                        <div className="flex items-center text-xs text-gray-500">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {formatDate(inquiry.timestamp)}
                         </div>
                       </div>
 
-                      <div className="flex-shrink-0 ml-2 sm:ml-4 flex space-x-1">
-                        {inquiry.status === 'unread' && (
-                          <button
-                            onClick={() => handleMarkAsRead(inquiry.id, inquiry.status)}
-                            className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
-                            title="確認済みにする"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
+                      <div className="mb-2">
+                        <h4 className="text-sm font-medium text-gray-900 mb-1 break-words">{inquiry.subject}</h4>
+                        <p className="text-sm text-gray-700 line-clamp-2 break-words">{inquiry.message}</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1 mb-2">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(inquiry.status)}`}>
+                          {inquiry.status === 'unread' ? '未読' : inquiry.status === 'read' ? '確認済み' : '解決済み'}
+                        </span>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(inquiry.priority)}`}>
+                          {inquiry.priority === 'urgent' ? '緊急' : inquiry.priority === 'high' ? '高' : inquiry.priority === 'normal' ? '通常' : '低'}
+                        </span>
+                        {repliedInquiries.has(inquiry.id) && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">
+                            <Reply className="h-3 w-3 mr-1" />
+                            返信済み
+                          </span>
                         )}
-                        {inquiry.status !== 'resolved' && (
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center text-xs text-gray-600 flex-1 min-w-0">
+                          <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                          <span className="truncate">{inquiry.fromUserName}</span>
+                          {inquiry.shopName && (
+                            <>
+                              <span className="mx-1">•</span>
+                              <span className="truncate">{inquiry.shopName}</span>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex space-x-1 ml-2">
                           <button
-                            onClick={() => handleMarkAsResolved(inquiry.id)}
-                            className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
-                            title="解決済みにする"
+                            onClick={() => handleReplyClick(inquiry)}
+                            className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                            title="返信する"
                           >
-                            <CheckCircle className="h-4 w-4" />
+                            <Reply className="h-4 w-4" />
                           </button>
-                        )}
+                          {inquiry.status === 'unread' && (
+                            <button
+                              onClick={() => handleMarkAsRead(inquiry.id, inquiry.status)}
+                              className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded transition-colors"
+                              title="確認済みにする"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
+                          {inquiry.status !== 'resolved' && (
+                            <button
+                              onClick={() => handleMarkAsResolved(inquiry.id)}
+                              className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="解決済みにする"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Desktop Layout */}
+                    <div className="hidden sm:block">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-4 flex-1 min-w-0">
+                          <div className="flex items-center space-x-2 flex-shrink-0">
+                            {getStatusIcon(inquiry.status)}
+                            {getRoleIcon(inquiry.fromRole)}
+                            {getPriorityIcon(inquiry.priority)}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-3 mb-2">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(inquiry.status)}`}>
+                                {inquiry.status === 'unread' ? '未読' : inquiry.status === 'read' ? '確認済み' : '解決済み'}
+                              </span>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPriorityColor(inquiry.priority)}`}>
+                                {inquiry.priority === 'urgent' ? '緊急' : inquiry.priority === 'high' ? '高' : inquiry.priority === 'normal' ? '通常' : '低'}
+                              </span>
+                              {repliedInquiries.has(inquiry.id) && (
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-purple-50 text-purple-700 border-purple-200">
+                                  <Reply className="h-3 w-3 mr-1" />
+                                  返信済み
+                                </span>
+                              )}
+                              <span className="text-xs text-gray-500">{inquiry.fromRole === 'manager' ? 'マネージャー' : 'スタッフ'}</span>
+                              <div className="flex items-center text-xs text-gray-500">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {formatDate(inquiry.timestamp)}
+                              </div>
+                            </div>
+
+                            <p className="text-base text-gray-900 mb-2 font-medium break-words">{inquiry.subject}</p>
+                            <p className="text-sm text-gray-700 mb-2 break-words line-clamp-2">{inquiry.message}</p>
+
+                            <div className="flex items-center text-xs text-gray-600 mb-2">
+                              <User className="h-3 w-3 mr-1 flex-shrink-0" />
+                              <span className="break-words">{inquiry.fromUserName}</span>
+                              {inquiry.shopName && (
+                                <>
+                                  <span className="mx-2">•</span>
+                                  <Building className="h-3 w-3 mr-1 flex-shrink-0" />
+                                  <span className="break-words">{inquiry.shopName}</span>
+                                </>
+                              )}
+                            </div>
+
+                            <div className="text-xs text-gray-500 break-words">
+                              <span className="font-medium">カテゴリ: </span>
+                              {inquiry.category === 'technical' ? '技術的' :
+                               inquiry.category === 'schedule' ? 'スケジュール' :
+                               inquiry.category === 'policy' ? 'ポリシー' : 'その他'}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex-shrink-0 ml-4 flex space-x-1">
+                          <button
+                            onClick={() => handleReplyClick(inquiry)}
+                            className="p-2 text-gray-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors duration-200"
+                            title="返信する"
+                          >
+                            <Reply className="h-4 w-4" />
+                          </button>
+                          {inquiry.status === 'unread' && (
+                            <button
+                              onClick={() => handleMarkAsRead(inquiry.id, inquiry.status)}
+                              className="p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
+                              title="確認済みにする"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+                          )}
+                          {inquiry.status !== 'resolved' && (
+                            <button
+                              onClick={() => handleMarkAsResolved(inquiry.id)}
+                              className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                              title="解決済みにする"
+                            >
+                              <CheckCircle className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -457,6 +522,96 @@ export default function InquiriesPage() {
             </div>
           </div>
         </main>
+
+        {/* Reply Modal */}
+        {replyModalOpen && replyingToInquiry && (
+          <div className="fixed inset-0 bg-gradient-to-br from-gray-900/20 via-slate-900/30 to-gray-800/20 backdrop-blur-md flex items-center justify-center z-50 p-4">
+            <div className="bg-white backdrop-blur-lg border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                    <Reply className="h-5 w-5 mr-2 text-purple-600" />
+                    返信を送信
+                  </h3>
+                  <button
+                    onClick={() => setReplyModalOpen(false)}
+                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-6">
+                {/* Original Inquiry */}
+                <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                  <h4 className="font-medium text-gray-900 mb-2">元のお問い合わせ</h4>
+                  <div className="space-y-2">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <User className="h-4 w-4 mr-2" />
+                      {replyingToInquiry.fromUserName}
+                      {replyingToInquiry.shopName && (
+                        <>
+                          <span className="mx-2">•</span>
+                          <Building className="h-4 w-4 mr-1" />
+                          {replyingToInquiry.shopName}
+                        </>
+                      )}
+                    </div>
+                    <p className="font-medium text-gray-900">{replyingToInquiry.subject}</p>
+                    <p className="text-sm text-gray-700 whitespace-pre-wrap">{replyingToInquiry.message}</p>
+                  </div>
+                </div>
+
+                {/* Reply Form */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    返信内容 <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={replyMessage}
+                    onChange={(e) => setReplyMessage(e.target.value)}
+                    placeholder="お問い合わせへの返信を入力してください..."
+                    rows={6}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-vertical"
+                    disabled={sendingReply}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    {replyMessage.length}/1000文字
+                  </p>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-3 mt-6">
+                  <button
+                    onClick={handleSendReply}
+                    disabled={sendingReply || !replyMessage.trim()}
+                    className="flex-1 py-3 px-6 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center space-x-2"
+                  >
+                    {sendingReply ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        <span>送信中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4" />
+                        <span>返信を送信</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => setReplyModalOpen(false)}
+                    disabled={sendingReply}
+                    className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed transition-colors"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   );

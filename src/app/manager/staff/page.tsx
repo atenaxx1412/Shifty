@@ -4,8 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
-import { 
-  Search,
+import {
   Edit,
   Mail,
   Calendar,
@@ -15,20 +14,20 @@ import {
 } from 'lucide-react';
 import { User, UserRole } from '@/types';
 import { userService } from '@/lib/userService';
+import { ManagerDataService } from '@/lib/managerDataService';
 
 export default function ManagerStaffPage() {
   const { currentUser } = useAuth();
   const [staff, setStaff] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<'all' | UserRole>('all');
   const [sortBy, setSortBy] = useState<'name' | 'role' | 'created'>('name');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<User | null>(null);
   const [editLoading, setEditLoading] = useState(false);
 
-  // userServiceを使用してスタッフデータを取得
+  // ManagerDataServiceを使用して最適化されたスタッフデータを取得
   useEffect(() => {
     const fetchStaff = async () => {
       if (!currentUser?.uid) return;
@@ -37,16 +36,16 @@ export default function ManagerStaffPage() {
       setError(null);
 
       try {
-        console.log('👥 Fetching staff data for manager UID:', currentUser.uid);
-        
-        // userServiceを使用してスタッフを取得
-        const staffData = await userService.getStaffByManager(currentUser.uid);
-        
-        console.log('✅ Retrieved staff from userService:', staffData.length, 'members');
+        console.log('👥 Fetching optimized staff data for manager UID:', currentUser.uid);
+
+        // ManagerDataServiceを使用してキャッシュ付きでスタッフを取得
+        const staffData = await ManagerDataService.getOptimizedStaffData(currentUser.uid);
+
+        console.log('✅ Retrieved staff from ManagerDataService:', staffData.length, 'members');
         console.log('📊 Staff data:', staffData);
-        
+
         setStaff(staffData);
-        
+
       } catch (err) {
         console.error('❌ Failed to fetch staff data:', err);
         setError('スタッフデータの取得に失敗しました');
@@ -61,10 +60,8 @@ export default function ManagerStaffPage() {
   // フィルターとソート機能
   const filteredStaff = staff
     .filter(member => {
-      const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           member.email.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesRole = filterRole === 'all' || member.role === filterRole;
-      return matchesSearch && matchesRole;
+      return matchesRole;
     })
     .sort((a, b) => {
       switch (sortBy) {
@@ -106,12 +103,34 @@ export default function ManagerStaffPage() {
     }
   };
 
-  const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('ja-JP', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(date);
+  const formatDate = (date: any) => {
+    if (!date) return '未設定';
+
+    try {
+      // Firestoreのタイムスタンプオブジェクトの場合
+      if (date && typeof date === 'object' && 'toDate' in date) {
+        return new Intl.DateTimeFormat('ja-JP', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        }).format(date.toDate());
+      }
+
+      // Dateオブジェクトまたは文字列の場合
+      const dateObj = new Date(date);
+      if (isNaN(dateObj.getTime())) {
+        return '不正な日付';
+      }
+
+      return new Intl.DateTimeFormat('ja-JP', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(dateObj);
+    } catch (error) {
+      console.error('Date formatting error:', error);
+      return '日付エラー';
+    }
   };
 
   // スタッフ編集機能
@@ -127,16 +146,19 @@ export default function ManagerStaffPage() {
   };
 
   const handleSaveStaff = async (updatedData: Partial<User>) => {
-    if (!editingStaff) return;
+    if (!editingStaff || !currentUser?.uid) return;
 
     setEditLoading(true);
     try {
       await userService.updateStaffDetails(editingStaff.uid, updatedData);
-      
+
+      // キャッシュを無効化
+      ManagerDataService.invalidateCache('staff', currentUser.uid);
+
       // スタッフリストを更新
-      setStaff(prevStaff => 
-        prevStaff.map(s => 
-          s.uid === editingStaff.uid 
+      setStaff(prevStaff =>
+        prevStaff.map(s =>
+          s.uid === editingStaff.uid
             ? { ...s, ...updatedData, updatedAt: new Date() }
             : s
         )
@@ -250,7 +272,7 @@ export default function ManagerStaffPage() {
                 <div>
                   <p className="text-sm font-medium text-gray-600 mb-1">総労働時間</p>
                   <p className="text-2xl font-bold text-gray-900">
-                    {staff.reduce((sum, s) => sum + (s.maxHoursPerWeek || 0), 0)}h/週
+                    {staff.reduce((sum, s) => sum + (s.maxHoursPerWeek || 0), 0)}/週
                   </p>
                 </div>
                 <div className="p-3 bg-purple-100 rounded-2xl">
@@ -260,50 +282,35 @@ export default function ManagerStaffPage() {
             </div>
           </div>
 
-          {/* Modern Search & Filters */}
-          <div className="bg-white/80 backdrop-blur-sm border border-gray-200/50 rounded-2xl shadow-sm p-4">
-            <div className="flex flex-col sm:flex-row gap-3">
-              <div className="flex-1">
-                <div className="relative group">
-                  <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5 transition-colors group-focus-within:text-blue-600" />
-                  <input
-                    type="text"
-                    placeholder="スタッフ名またはメールアドレスで検索..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-12 pr-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-900 placeholder-gray-500"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <select
-                  value={filterRole}
-                  onChange={(e) => setFilterRole(e.target.value as 'all' | UserRole)}
-                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
-                >
-                  <option value="all">全ての役職</option>
-                  <option value="staff">スタッフ</option>
-                  <option value="manager">マネージャー</option>
-                </select>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as 'name' | 'role' | 'created')}
-                  className="px-4 py-3 bg-gray-50/50 border-0 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-300/50 focus:outline-none transition-all duration-200 text-gray-700 cursor-pointer"
-                >
-                  <option value="name">名前順</option>
-                  <option value="role">役職順</option>
-                  <option value="created">登録日順</option>
-                </select>
-              </div>
-            </div>
-          </div>
 
           {/* Modern Staff List */}
           <div className="bg-white/90 backdrop-blur-sm border border-gray-200/50 rounded-2xl shadow-sm overflow-hidden">
             <div className="px-6 py-5 border-b border-gray-100/80">
-              <h3 className="text-lg font-semibold text-gray-900">
-                スタッフ一覧 <span className="text-gray-600">({filteredStaff.length}名)</span>
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  スタッフ一覧 <span className="text-gray-600">({filteredStaff.length}名)</span>
+                </h3>
+                <div className="flex gap-2">
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value as 'all' | UserRole)}
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="all">全ての役職</option>
+                    <option value="staff">スタッフ</option>
+                    <option value="manager">マネージャー</option>
+                  </select>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as 'name' | 'role' | 'created')}
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  >
+                    <option value="name">名前順</option>
+                    <option value="role">役職順</option>
+                    <option value="created">登録日順</option>
+                  </select>
+                </div>
+              </div>
             </div>
             
             {/* Mobile-friendly card layout for small screens */}
@@ -491,7 +498,7 @@ function StaffEditForm({
     nameKana: staff.nameKana || '',
     displayName: staff.displayName || '',
     position: staff.position || '',
-    hourlyRate: staff.hourlyRate || '',
+    hourlyRate: staff.hourlyRate || 1000,
     transportationCost: staff.transportationCost || '',
     fixedShift: staff.fixedShift || '',
     gender: staff.gender || 'not_specified'

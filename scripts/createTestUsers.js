@@ -1,5 +1,5 @@
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, addDoc, getDocs, query, where } = require('firebase/firestore');
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, addDoc, getDocs, query, where } from 'firebase/firestore';
 
 // Firebase設定（環境変数から読み取り）
 const firebaseConfig = {

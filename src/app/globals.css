@@ -217,3 +217,102 @@
 .animate-page-enter {
   animation: page-enter 400ms ease-out forwards;
 }
+
+/* Notification slide up animation */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 300ms ease-out forwards;
+}
+
+/* PDF Print Styles - 日本語対応印刷スタイル */
+@media print {
+  /* ページ設定 */
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  /* 基本フォント設定 */
+  * {
+    font-family: 'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* 背景色・境界線を印刷時も表示 */
+  table, th, td {
+    -webkit-print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* モーダル背景を印刷時は非表示 */
+  .fixed.inset-0 {
+    position: static !important;
+    background: white !important;
+    backdrop-filter: none !important;
+  }
+
+  /* プレビューモーダルの印刷最適化 */
+  .bg-white\\/90 {
+    background: white !important;
+    backdrop-filter: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* テーブル印刷最適化 */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: avoid;
+  }
+
+  /* セル内テキストの調整 */
+  th, td {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    border: 1px solid #000 !important;
+  }
+
+  /* ヘッダー行の強調 */
+  thead tr {
+    background-color: #f5f5f5 !important;
+    font-weight: bold !important;
+  }
+
+  /* 日付列の幅調整 */
+  th:first-child, td:first-child {
+    width: 60px !important;
+    text-align: center !important;
+  }
+
+  /* シフト情報のテキスト */
+  .text-sm {
+    font-size: 9px !important;
+  }
+
+  /* ページ分割の制御 */
+  .print\\:break-before-page {
+    page-break-before: always;
+  }
+
+  .print\\:break-inside-avoid {
+    page-break-inside: avoid;
+  }
+}

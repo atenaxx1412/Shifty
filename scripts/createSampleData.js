@@ -1,6 +1,6 @@
 // Firebase初期化
-const admin = require('firebase-admin');
-const path = require('path');
+import admin from 'firebase-admin';
+import path from 'path';
 
 // サービスアカウントキーファイルのパスを設定
 // 実際の環境では環境変数で設定することを推奨
@@ -126,7 +126,7 @@ async function createSampleData() {
 }
 
 // スクリプト実行
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   createSampleData()
     .then(() => {
       console.log('📋 Sample data creation finished');
@@ -138,4 +138,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { createSampleData };
+export { createSampleData };

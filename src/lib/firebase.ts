@@ -1,5 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
+import { getMessaging, isSupported } from "firebase/messaging";
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -25,4 +26,15 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase services
 export const db = getFirestore(app);
 
+// Initialize Firebase Messaging (only in browser environment)
+let messaging: any = null;
+if (typeof window !== 'undefined') {
+  isSupported().then(supported => {
+    if (supported) {
+      messaging = getMessaging(app);
+    }
+  });
+}
+
+export { messaging };
 export default app;

@@ -231,7 +231,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
                 <div className="flex items-center space-x-3">
                   <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900">
-                      atena
+                      {currentUser?.name || currentUser?.shopName || 'ユーザー'}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-gray-500" />
@@ -241,7 +241,7 @@ export default function AppHeader({ title = 'Dashboard', showSidebar = true }: A
               {isProfileOpen && (
                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-gray-100 py-2">
                   <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-900">atena</p>
+                    <p className="text-sm font-semibold text-gray-900">{currentUser?.name || currentUser?.shopName || 'ユーザー'}</p>
                   </div>
                   
                   <div className="py-1">

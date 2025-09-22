@@ -13,7 +13,8 @@ import {
   MessageCircle,
   UserCheck,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import StatCard from '@/components/ui/StatCard';
 import { useDataCache } from '@/hooks/useDataCache';
@@ -43,6 +44,7 @@ export default function RootPage() {
   } = useDataCache<StatsData>({
     key: 'rootStats',
     fetchFunction: fetchOptimizedStatsData,
+    ttl: 5 * 60 * 1000, // 5分間キャッシュ
     initialData: {
       totalUsers: 0,
       totalShops: 0,
@@ -205,7 +207,7 @@ export default function RootPage() {
       href: '/root/logs',
       description: 'マネージャー・スタッフからのお問い合わせ管理',
       gradient: 'from-blue-500 to-blue-600',
-      stats: '未読: 0件'
+      stats: `未読: ${statsData.inquiriesCount}件`
     },
     { 
       icon: BarChart3, 
@@ -249,6 +251,37 @@ export default function RootPage() {
 
         <main className="px-4 sm:px-6 lg:px-8 py-4">
           <div className="max-w-7xl mx-auto space-y-8">
+
+            {/* Header with Manual Refresh */}
+            <div className="flex items-center justify-between bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+              <div className="flex items-center space-x-3">
+                <BarChart3 className="h-6 w-6 text-gray-700" />
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">統計ダッシュボード</h2>
+                  <p className="text-sm text-gray-500">
+                    {statsError ? (
+                      <span className="text-red-500">データ取得エラー - 更新ボタンでリトライしてください</span>
+                    ) : statsLoading ? (
+                      '読み込み中...'
+                    ) : (
+                      `最終更新: ${new Date().toLocaleTimeString('ja-JP')}`
+                    )}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={refreshStats}
+                disabled={statsLoading}
+                className={`flex items-center space-x-2 px-3 py-2 rounded-lg transition-colors text-sm ${
+                  statsError
+                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <RefreshCw className={`h-4 w-4 ${statsLoading ? 'animate-spin' : ''}`} />
+                <span className="hidden sm:inline">{statsError ? 'リトライ' : '更新'}</span>
+              </button>
+            </div>
 
             {/* Stats Grid - Using StatCard Component */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">

@@ -124,7 +124,7 @@ export function useDataCache<T>({
 
       throw err;
     }
-  }, [key, fetchFunction, ttl]); // loadFromCache、saveToCacheの依存関係を削除
+  }, [key, fetchFunction, loadFromCache, saveToCache]);
 
   // 手動更新関数
   const refresh = useCallback(() => {
@@ -141,7 +141,7 @@ export function useDataCache<T>({
   // 初回マウント時にデータを読み込み
   useEffect(() => {
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchData]);
 
   // 午前0時に自動更新（1日1回）
   useEffect(() => {
@@ -166,7 +166,7 @@ export function useDataCache<T>({
     }, msUntilMidnight);
 
     return () => clearTimeout(timeoutId);
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, fetchData]);
 
   return {
     data,

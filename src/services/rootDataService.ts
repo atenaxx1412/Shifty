@@ -94,24 +94,28 @@ export const fetchOptimizedStatsData = async (): Promise<StatsData> => {
     let inquiryGrowth = '0';
 
     try {
-      const inquiriesSnapshot = await getDocs(
-        query(collection(db, 'inquiries'), limit(1000))
-      );
-      inquiriesCount = inquiriesSnapshot.size;
+      console.log('📧 お問い合わせデータを取得中...');
 
-      // 先月のお問い合わせ数
-      const lastMonthInquiriesQuery = query(
+      // 未読のお問い合わせのみをカウント（status: "unread"）
+      const unreadInquiriesQuery = query(
         collection(db, 'inquiries'),
-        where('createdAt', '<', currentMonth),
+        where('status', '==', 'unread'),
         limit(1000)
       );
-      const lastMonthInquiriesSnapshot = await getDocs(lastMonthInquiriesQuery);
-      const lastMonthInquiries = lastMonthInquiriesSnapshot.size;
+      const unreadInquiriesSnapshot = await getDocs(unreadInquiriesQuery);
+      inquiriesCount = unreadInquiriesSnapshot.size;
 
-      const inquiryDiff = inquiriesCount - lastMonthInquiries;
-      inquiryGrowth = inquiryDiff > 0 ? `+${inquiryDiff}` : inquiryDiff < 0 ? `${inquiryDiff}` : '0';
+      console.log('📧 未読お問い合わせ数:', inquiriesCount);
+
+      // 成長率は0固定（複合インデックス不要）
+      inquiryGrowth = '0';
+
+      console.log('📧 お問い合わせ成長率:', inquiryGrowth);
     } catch (inquiriesError) {
-      console.log('お問い合わせデータなし:', inquiriesError);
+      console.error('❌ お問い合わせデータ取得エラー:', inquiriesError);
+      // エラー時でも0を返して処理を継続
+      inquiriesCount = 0;
+      inquiryGrowth = '0';
     }
 
     // 利益計算
