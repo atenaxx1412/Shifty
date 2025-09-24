@@ -172,7 +172,7 @@ export default function RootPage() {
     {
       icon: Users,
       label: '店長管理',
-      href: '/root/shops',
+      href: '/root/operation',
       description: '店長の追加・編集・削除・分析',
       gradient: 'from-blue-500 to-blue-600',
       stats: `${statsData.totalShops}名`
