@@ -5,21 +5,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { 
-  Calendar, 
-  Clock, 
-  ArrowLeft,
-  ArrowRight,
+import {
+  Calendar,
+  Clock,
   ChevronLeft,
   ChevronRight,
   MapPin,
-  Users,
   AlertCircle,
   CheckCircle,
   FileText,
   Download as DownloadIcon
 } from 'lucide-react';
-import { format, addDays, subDays, startOfWeek, addWeeks, subWeeks, isSameDay, startOfDay } from 'date-fns';
+import { format, addDays, isSameDay, startOfDay, startOfMonth, endOfMonth, addMonths, subMonths, getDay, startOfWeek } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { shiftService } from '@/lib/shiftService';
 import { ShiftExtended } from '@/types';
@@ -27,31 +24,24 @@ import { ShiftExtended } from '@/types';
 export default function StaffSchedulePage() {
   const { currentUser } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
+  // デフォルトで月表示を設定
   const [shifts, setShifts] = useState<ShiftExtended[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // リアルタイムでシフトデータを取得
   useEffect(() => {
-    if (!currentUser?.shopId) return;
+    if (!currentUser?.uid) return;
 
     setLoading(true);
     console.log('📅 Setting up real-time shift subscription for staff:', currentUser.uid);
 
-    // リアルタイムシフト取得
-    const unsubscribe = shiftService.subscribeToShiftUpdates(
-      currentUser.shopId,
+    // スタッフ専用のリアルタイムシフト取得
+    const unsubscribe = shiftService.subscribeToStaffShifts(
+      currentUser.uid,
       (updatedShifts) => {
-        // 自分に関連するシフトのみフィルタリング
-        const myShifts = updatedShifts.filter(shift => 
-          shift.slots.some(slot => 
-            slot.assignedStaff?.includes(currentUser.uid)
-          )
-        );
-        
-        console.log(`📊 Received ${myShifts.length} shifts for staff:`, currentUser.name);
-        setShifts(myShifts);
+        console.log(`📊 Received ${updatedShifts.length} shifts for staff:`, currentUser.name);
+        setShifts(updatedShifts);
         setLoading(false);
         setError(null);
       }
@@ -63,9 +53,13 @@ export default function StaffSchedulePage() {
     };
   }, [currentUser]);
 
-  // 週の開始日を取得
-  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 }); // 月曜始まり
-  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // 月の情報を取得
+  const monthStart = startOfMonth(selectedDate);
+  const monthEnd = endOfMonth(selectedDate);
+  // カレンダーグリッドの生成（6週間 = 42日）
+
+  const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 }); // 月曜始まり
+  const calendarDates = Array.from({ length: 42 }, (_, i) => addDays(calendarStart, i));
 
   // 指定日のシフトを取得
   const getShiftsForDate = (date: Date) => {
@@ -77,7 +71,7 @@ export default function StaffSchedulePage() {
     const dayShifts = getShiftsForDate(date);
     const mySlots: Array<{
       shift: ShiftExtended;
-      slot: any;
+      slot: ShiftExtended['slots'][0];
     }> = [];
 
     dayShifts.forEach(shift => {
@@ -91,17 +85,17 @@ export default function StaffSchedulePage() {
     return mySlots;
   };
 
-  // 週を変更
-  const changeWeek = (direction: 'prev' | 'next') => {
+  // 月を変更
+  const changeMonth = (direction: 'prev' | 'next') => {
     if (direction === 'prev') {
-      setSelectedDate(subWeeks(selectedDate, 1));
+      setSelectedDate(subMonths(selectedDate, 1));
     } else {
-      setSelectedDate(addWeeks(selectedDate, 1));
+      setSelectedDate(addMonths(selectedDate, 1));
     }
   };
 
-  // 今週に戻る
-  const goToThisWeek = () => {
+  // 今月に戻る
+  const goToThisMonth = () => {
     setSelectedDate(new Date());
   };
 
@@ -119,27 +113,35 @@ export default function StaffSchedulePage() {
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'published':
-        return '確定';
-      case 'draft':
-        return '下書き';
-      case 'completed':
-        return '完了';
-      default:
-        return status;
-    }
-  };
 
-  // 今日の統計
-  const todayStats = {
-    totalShifts: getMyShiftsForDate(new Date()).length,
-    totalHours: getMyShiftsForDate(new Date()).reduce((total, { slot }) => {
-      const duration = parseInt(slot.estimatedDuration || '0') / 60;
-      return total + duration;
+  // 今月の統計
+  const monthStats = {
+    totalShifts: shifts.filter(shift => {
+      const shiftDate = new Date(shift.date);
+      return shiftDate >= monthStart && shiftDate <= monthEnd;
+    }).reduce((total, shift) => {
+      return total + shift.slots.filter(slot =>
+        slot.assignedStaff?.includes(currentUser?.uid || '')
+      ).length;
     }, 0),
-    confirmedShifts: getMyShiftsForDate(new Date()).filter(({ shift }) => shift.status === 'published').length,
+    totalHours: shifts.filter(shift => {
+      const shiftDate = new Date(shift.date);
+      return shiftDate >= monthStart && shiftDate <= monthEnd;
+    }).reduce((total, shift) => {
+      return total + shift.slots.filter(slot =>
+        slot.assignedStaff?.includes(currentUser?.uid || '')
+      ).reduce((slotTotal, slot) => {
+        return slotTotal + (parseInt(slot.estimatedDuration || '0') / 60);
+      }, 0);
+    }, 0),
+    confirmedShifts: shifts.filter(shift => {
+      const shiftDate = new Date(shift.date);
+      return shiftDate >= monthStart && shiftDate <= monthEnd && shift.status === 'published';
+    }).reduce((total, shift) => {
+      return total + shift.slots.filter(slot =>
+        slot.assignedStaff?.includes(currentUser?.uid || '')
+      ).length;
+    }, 0),
   };
 
   if (loading) {
@@ -176,14 +178,14 @@ export default function StaffSchedulePage() {
             </div>
           </div>
 
-          {/* Today's Stats */}
+          {/* Monthly Stats */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-blue-50 rounded-lg p-4">
               <div className="flex items-center space-x-3">
                 <Calendar className="h-6 w-6 text-blue-600" />
                 <div>
-                  <p className="text-sm text-blue-600 font-medium">今日のシフト</p>
-                  <p className="text-2xl font-bold text-blue-900">{todayStats.totalShifts}件</p>
+                  <p className="text-sm text-blue-600 font-medium">今月のシフト</p>
+                  <p className="text-2xl font-bold text-blue-900">{monthStats.totalShifts}件</p>
                 </div>
               </div>
             </div>
@@ -192,7 +194,7 @@ export default function StaffSchedulePage() {
                 <Clock className="h-6 w-6 text-green-600" />
                 <div>
                   <p className="text-sm text-green-600 font-medium">予定時間</p>
-                  <p className="text-2xl font-bold text-green-900">{todayStats.totalHours.toFixed(1)}h</p>
+                  <p className="text-2xl font-bold text-green-900">{monthStats.totalHours.toFixed(1)}</p>
                 </div>
               </div>
             </div>
@@ -201,7 +203,7 @@ export default function StaffSchedulePage() {
                 <CheckCircle className="h-6 w-6 text-purple-600" />
                 <div>
                   <p className="text-sm text-purple-600 font-medium">確定済み</p>
-                  <p className="text-2xl font-bold text-purple-900">{todayStats.confirmedShifts}件</p>
+                  <p className="text-2xl font-bold text-purple-900">{monthStats.confirmedShifts}件</p>
                 </div>
               </div>
             </div>
@@ -211,91 +213,115 @@ export default function StaffSchedulePage() {
           <div className="flex items-center justify-between bg-white rounded-lg shadow p-4">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => changeWeek('prev')}
+                onClick={() => changeMonth('prev')}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <ChevronLeft className="h-5 w-5" />
               </button>
-              
+
               <h2 className="text-lg font-semibold text-gray-900">
-                {format(weekStart, 'yyyy年M月d日', { locale: ja })} 〜 {format(addDays(weekStart, 6), 'M月d日', { locale: ja })}
+                {format(selectedDate, 'yyyy年M月', { locale: ja })}
               </h2>
-              
+
               <button
-                onClick={() => changeWeek('next')}
+                onClick={() => changeMonth('next')}
                 className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <ChevronRight className="h-5 w-5" />
               </button>
             </div>
-            
+
             <button
-              onClick={goToThisWeek}
+              onClick={goToThisMonth}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
             >
-              今週
+              今月
             </button>
           </div>
 
-          {/* Weekly Calendar */}
+          {/* Monthly Calendar */}
           <div className="bg-white rounded-lg shadow overflow-hidden">
+            {/* Calendar Header */}
             <div className="grid grid-cols-7 border-b border-gray-200">
-              {['月', '火', '水', '木', '金', '土', '日'].map((day, index) => (
+              {['月', '火', '水', '木', '金', '土', '日'].map((day) => (
                 <div key={day} className="p-4 text-center font-medium text-gray-900 bg-gray-50">
                   <div className="text-sm">{day}</div>
-                  <div className="text-lg">{format(weekDates[index], 'd')}</div>
-                  {isSameDay(weekDates[index], new Date()) && (
-                    <div className="w-2 h-2 bg-blue-600 rounded-full mx-auto mt-1"></div>
-                  )}
                 </div>
               ))}
             </div>
 
-            <div className="grid grid-cols-7 min-h-96">
-              {weekDates.map((date, index) => {
+            {/* Calendar Grid */}
+            <div className="grid grid-cols-7">
+              {calendarDates.map((date, index) => {
                 const dayShifts = getMyShiftsForDate(date);
                 const isToday = isSameDay(date, new Date());
                 const isPast = date < startOfDay(new Date());
+                const isCurrentMonth = date >= monthStart && date <= monthEnd;
+                const isWeekend = getDay(date) === 0 || getDay(date) === 6; // 日曜日または土曜日
 
                 return (
                   <div
                     key={date.toISOString()}
-                    className={`p-2 border-r border-gray-200 ${
-                      isToday ? 'bg-blue-50' : isPast ? 'bg-gray-50' : ''
-                    } ${index === 6 ? 'border-r-0' : ''}`}
+                    className={`min-h-32 p-2 border-r border-b border-gray-200 ${
+                      isToday ? 'bg-blue-50' :
+                      !isCurrentMonth ? 'bg-gray-50' :
+                      isPast ? 'bg-gray-25' : ''
+                    } ${
+                      (index + 1) % 7 === 0 ? 'border-r-0' : ''
+                    } ${
+                      index >= 35 ? 'border-b-0' : ''
+                    }`}
                   >
-                    <div className="space-y-1">
-                      {dayShifts.map(({ shift, slot }, slotIndex) => (
-                        <div
-                          key={`${shift.shiftId}-${slot.slotId}-${slotIndex}`}
-                          className={`p-2 rounded text-xs border ${getStatusColor(shift.status)}`}
-                        >
-                          <div className="font-medium">
-                            {slot.startTime}-{slot.endTime}
-                          </div>
-                          {slot.positions && slot.positions.length > 0 && (
-                            <div className="flex items-center space-x-1 mt-1">
-                              <MapPin className="h-3 w-3" />
-                              <span>{slot.positions.join(', ')}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between mt-1">
-                            <span className={`px-1 py-0.5 rounded text-xs font-medium ${getStatusColor(shift.status)}`}>
-                              {getStatusText(shift.status)}
-                            </span>
-                            <div className="text-gray-500">
-                              {Math.round((slot.estimatedDuration || 0) / 60)}h
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      
-                      {dayShifts.length === 0 && !isPast && (
-                        <div className="text-center text-gray-400 py-4">
-                          <div className="text-xs">休み</div>
-                        </div>
+                    {/* 日付表示 */}
+                    <div className={`flex justify-between items-center mb-2`}>
+                      <span className={`text-sm font-medium ${
+                        !isCurrentMonth ? 'text-gray-400' :
+                        isToday ? 'text-blue-600' :
+                        isWeekend ? 'text-red-500' :
+                        'text-gray-900'
+                      }`}>
+                        {format(date, 'd')}
+                      </span>
+                      {isToday && (
+                        <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
                       )}
                     </div>
+
+                    {/* シフト表示 */}
+                    {isCurrentMonth && (
+                      <div className="space-y-1">
+                        {dayShifts.slice(0, 3).map(({ shift, slot }, slotIndex) => (
+                          <div
+                            key={`${shift.shiftId}-${slot.slotId}-${slotIndex}`}
+                            className={`p-1 rounded text-xs border ${getStatusColor(shift.status)}`}
+                          >
+                            <div className="font-medium truncate">
+                              {slot.startTime}-{slot.endTime}
+                            </div>
+                            {slot.positions && slot.positions.length > 0 && (
+                              <div className="flex items-center space-x-1 mt-1">
+                                <MapPin className="h-2 w-2" />
+                                <span className="truncate">{slot.positions[0]}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* 追加のシフトがある場合 */}
+                        {dayShifts.length > 3 && (
+                          <div className="text-xs text-gray-500 text-center">
+                            +{dayShifts.length - 3}件
+                          </div>
+                        )}
+
+                        {/* シフトがない場合 */}
+                        {dayShifts.length === 0 && !isPast && (
+                          <div className="text-center text-gray-300 py-2">
+                            <div className="text-xs">-</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

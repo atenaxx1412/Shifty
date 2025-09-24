@@ -84,7 +84,22 @@ export function DataSharingProvider({ children }: { children: React.ReactNode })
     if (!sharedData?.lastUpdated) return false;
 
     const now = new Date();
-    const diffMinutes = (now.getTime() - sharedData.lastUpdated.getTime()) / (1000 * 60);
+    let lastUpdatedTime: number;
+
+    // Handle different date formats safely
+    if (sharedData.lastUpdated instanceof Date) {
+      lastUpdatedTime = sharedData.lastUpdated.getTime();
+    } else if (typeof sharedData.lastUpdated === 'string') {
+      lastUpdatedTime = new Date(sharedData.lastUpdated).getTime();
+    } else if (typeof sharedData.lastUpdated === 'object' && 'toDate' in sharedData.lastUpdated) {
+      // Handle Firestore Timestamp
+      lastUpdatedTime = (sharedData.lastUpdated as any).toDate().getTime();
+    } else {
+      console.warn('Unknown lastUpdated format:', sharedData.lastUpdated);
+      return false;
+    }
+
+    const diffMinutes = (now.getTime() - lastUpdatedTime) / (1000 * 60);
     return diffMinutes <= maxAgeMinutes;
   }, [sharedData]);
 

@@ -249,28 +249,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Set user and store in localStorage for persistence
       setCurrentUser(user);
+
       if (typeof window !== 'undefined') {
         localStorage.setItem('currentUser', JSON.stringify(user));
         // Set authentication cookie for middleware
         document.cookie = `auth-token=${user.uid}; path=/; max-age=86400`;
       }
 
-      // Add a short delay for smoother transition
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // State更新を確実に適用するため短時間待機
+      await new Promise(resolve => setTimeout(resolve, 100));
 
-      // ロール別ルーティング - router.replace()でhistory stackを汚染しない
+      // ロール別ルーティング - router.push()でより確実なナビゲーション
       switch (user.role) {
         case 'root':
-          router.replace('/root');
+          console.log('🔄 Redirecting to root dashboard');
+          router.push('/root');
           break;
         case 'manager':
-          router.replace('/manager');
+          console.log('🔄 Redirecting to manager dashboard');
+          router.push('/manager');
           break;
         case 'staff':
-          router.replace('/staff');
+          console.log('🔄 Redirecting to staff dashboard');
+          router.push('/staff');
           break;
         default:
-          router.replace('/dashboard');
+          console.log('🔄 Redirecting to default dashboard');
+          router.push('/dashboard');
       }
     } catch (error) {
       // Log any unexpected errors

@@ -1632,6 +1632,137 @@ export class ShiftManagementService {
       updatedAt: doc.data().updatedAt?.toDate() || new Date(),
     })) as ShiftRequestEnhanced[];
   }
+
+  // ========== STAFF SPECIFIC METHODS ==========
+
+  /**
+   * スタッフ用: 自分のシフトをリアルタイムで取得
+   */
+  subscribeToStaffShifts(
+    staffId: string,
+    callback: (shifts: ShiftExtended[]) => void
+  ): () => void {
+    console.log('🔄 Setting up staff shift subscription for:', staffId);
+
+    // スタッフは発行済み（published）シフトのみ表示
+    const q = query(
+      collection(db, 'shifts_extended'),
+      where('status', '==', 'published'),
+      limit(100)
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      try {
+        const allShifts = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate() || new Date(),
+          createdAt: doc.data().createdAt?.toDate() || new Date(),
+          updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+        })) as ShiftExtended[];
+
+        // スタッフに割り当てられたシフトのみフィルタリング
+        const staffShifts = allShifts.filter(shift => {
+          if (!shift.slots || shift.slots.length === 0) return false;
+
+          return shift.slots.some(slot =>
+            slot.assignedStaff &&
+            slot.assignedStaff.includes(staffId)
+          );
+        });
+
+        console.log(`📊 Found ${staffShifts.length} shifts for staff ${staffId}`);
+        callback(staffShifts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()));
+      } catch (error) {
+        console.error('❌ Error processing staff shifts:', error);
+        callback([]);
+      }
+    }, (error) => {
+      console.error('❌ Staff shift subscription error:', error);
+      callback([]);
+    });
+
+    return unsubscribe;
+  }
+
+  /**
+   * スタッフ用: 指定期間のシフトを取得
+   */
+  async getStaffShiftsForPeriod(
+    staffId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<ShiftExtended[]> {
+    try {
+      console.log(`📅 Getting staff shifts for ${staffId} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      // 期間内の発行済みシフトを取得
+      const q = query(
+        collection(db, 'shifts_extended'),
+        where('status', '==', 'published')
+      );
+
+      const snapshot = await getDocs(q);
+      const allShifts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().date?.toDate() || new Date(),
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+        updatedAt: doc.data().updatedAt?.toDate() || new Date(),
+      })) as ShiftExtended[];
+
+      // 期間とスタッフでフィルタリング
+      const staffShifts = allShifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        const inPeriod = shiftDate >= startDate && shiftDate <= endDate;
+        const assignedToStaff = shift.slots?.some(slot =>
+          slot.assignedStaff && slot.assignedStaff.includes(staffId)
+        );
+
+        return inPeriod && assignedToStaff;
+      });
+
+      return staffShifts.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    } catch (error) {
+      console.error('❌ Error fetching staff shifts for period:', error);
+      return [];
+    }
+  }
+
+  /**
+   * シフトを一括発行（draft → published）
+   */
+  async publishShifts(shiftIds: string[]): Promise<void> {
+    try {
+      console.log(`📤 Publishing ${shiftIds.length} shifts...`);
+
+      // 各シフトのstatusをpublishedに更新
+      const updatePromises = shiftIds.map(async (shiftId) => {
+        const shiftRef = doc(db, 'shifts_extended', shiftId);
+        await updateDoc(shiftRef, {
+          status: 'published',
+          updatedAt: serverTimestamp(),
+          publishedAt: serverTimestamp(),
+          'auditLog': {
+            lastAction: 'published',
+            performedBy: 'manager',
+            timestamp: serverTimestamp(),
+            changes: { status: { before: 'draft', after: 'published' } },
+            reason: 'Manager published shift'
+          }
+        });
+        console.log(`✅ Published shift: ${shiftId}`);
+      });
+
+      // 全てのシフトを並行更新
+      await Promise.all(updatePromises);
+
+      console.log(`🎉 Successfully published ${shiftIds.length} shifts`);
+    } catch (error) {
+      console.error('❌ Error publishing shifts:', error);
+      throw new Error('シフトの発行に失敗しました。再度お試しください。');
+    }
+  }
 }
 
 // Export singleton instance

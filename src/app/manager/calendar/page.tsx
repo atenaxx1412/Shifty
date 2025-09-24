@@ -88,6 +88,8 @@ export default function ManagerCalendarPage() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [templates, setTemplates] = useState<StaffingTemplate[]>([]);
   const [shiftRequests, setShiftRequests] = useState<MonthlyShiftRequest[]>([]);
+  const [showPublishDialog, setShowPublishDialog] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
 
   // データ取得とリアルタイム購読
   useEffect(() => {
@@ -385,9 +387,54 @@ export default function ManagerCalendarPage() {
     setChatRelatedShift(null);
   };
 
-  // 出力・プレビュー機能
+  // 出力・プレビュー・発行機能
   const handleExportShift = () => {
     setShowExportModal(true);
+  };
+
+  // シフト発行機能
+  const handlePublishShifts = async () => {
+    setShowPublishDialog(true);
+  };
+
+  const confirmPublishShifts = async () => {
+    try {
+      setPublishLoading(true);
+
+      // 現在の月のdraft状態のシフトを取得
+      const monthStart = startOfMonth(selectedDate);
+      const monthEnd = endOfMonth(selectedDate);
+
+      const draftShifts = shifts.filter(shift => {
+        const shiftDate = new Date(shift.date);
+        return shiftDate >= monthStart &&
+               shiftDate <= monthEnd &&
+               shift.status === 'draft';
+      });
+
+      if (draftShifts.length === 0) {
+        alert('発行対象の下書きシフトがありません。');
+        setShowPublishDialog(false);
+        setPublishLoading(false);
+        return;
+      }
+
+      // シフトを一括でpublished状態に更新
+      const shiftIds = draftShifts.map(shift => shift.shiftId);
+      await shiftService.publishShifts(shiftIds);
+
+      alert(`${draftShifts.length}件のシフトを発行しました。スタッフが確認できます。`);
+      setShowPublishDialog(false);
+    } catch (error) {
+      console.error('Error publishing shifts:', error);
+      alert('シフトの発行に失敗しました。');
+    } finally {
+      setPublishLoading(false);
+    }
+  };
+
+  const cancelPublishShifts = () => {
+    setShowPublishDialog(false);
   };
 
   const handleShowExport = handleExportShift; // 互換性のためのエイリアス
@@ -621,6 +668,21 @@ export default function ManagerCalendarPage() {
                   </svg>
                   <span>出力</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handlePublishShifts();
+                  }}
+                  className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 flex items-center space-x-2 transition-colors cursor-pointer"
+                  style={{ pointerEvents: 'auto' }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  <span>発行</span>
+                </button>
               </div>
 
               {/* 月間統計 */}
@@ -715,6 +777,38 @@ export default function ManagerCalendarPage() {
           monthDates={getMonthDates()}
           getStaffShiftsForDate={getStaffShiftsForDate}
         />
+
+        {/* シフト発行確認ダイアログ */}
+        {showPublishDialog && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">シフト発行の確認</h3>
+              <p className="text-gray-600 mb-6">
+                {format(selectedDate, 'yyyy年M月', { locale: ja })}の下書きシフトを発行します。<br />
+                発行後、スタッフがシフトを確認できるようになります。
+              </p>
+              <div className="flex space-x-3 justify-end">
+                <button
+                  onClick={cancelPublishShifts}
+                  disabled={publishLoading}
+                  className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={confirmPublishShifts}
+                  disabled={publishLoading}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {publishLoading && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  <span>{publishLoading ? '発行中...' : '発行する'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* チャットサイドバー */}
         <SimpleChatSidebar

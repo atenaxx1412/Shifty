@@ -14,22 +14,24 @@ interface ManagerLayoutProps {
  * - Firebase最適化の基盤
  */
 export default function ManagerLayout({ children }: ManagerLayoutProps) {
-  const { currentUser } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  // フォールバック用のマネージャー情報（開発・テスト用）
-  const fallbackManager = {
-    uid: "test-manager-001",
-    email: "manager@shifty.com",
-    name: "テスト店長",
-    role: "manager" as const
-  };
+  // 認証情報の読み込み中は、ローディング画面を表示
+  if (loading || !currentUser) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-2 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-gray-600 text-lg">認証情報を確認中...</p>
+        </div>
+      </div>
+    );
+  }
 
-  // 認証済みまたはフォールバック情報を使用
-  const managerUser = currentUser || fallbackManager;
-
+  // 認証済みユーザーが確定してから ManagerDataProvider を初期化
   return (
     <ManagerDataProvider
-      managerId={managerUser.uid}
+      managerId={currentUser.uid}
       autoLoad={true}
     >
       {children}
