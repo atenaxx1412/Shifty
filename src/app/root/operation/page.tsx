@@ -89,6 +89,7 @@ export default function ManagersPage() {
   });
   const [showCreateManagerModal, setShowCreateManagerModal] = useState(false);
   const [showCreateStaffModal, setShowCreateStaffModal] = useState(false);
+  const [showSlotRequestModal, setShowSlotRequestModal] = useState(false);
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
 
   const [managerFormData, setManagerFormData] = useState({
@@ -102,6 +103,12 @@ export default function ManagersPage() {
     loginId: '',
     password: '',
     managerId: ''
+  });
+
+  const [slotRequestFormData, setSlotRequestFormData] = useState({
+    managerId: '',
+    requestedSlots: 1,
+    reason: ''
   });
 
   const [availableSkills] = useState([
@@ -256,6 +263,35 @@ export default function ManagersPage() {
     }
   };
 
+  // Handle slot request
+  const handleSlotRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      console.log('🔥 Processing slot request:', slotRequestFormData);
+      
+      // ここでは仮の実装：実際のデータベース操作は後で実装
+      // 現在は申請を受け付けたとしてアラート表示
+      alert(`店長への枠追加申請を受け付けました。
+申請店長: ${localManagersData.find(m => m.manager.uid === slotRequestFormData.managerId)?.manager.name}
+追加枠数: ${slotRequestFormData.requestedSlots}枠
+理由: ${slotRequestFormData.reason}`);
+      
+      // Reset form
+      setSlotRequestFormData({
+        managerId: '',
+        requestedSlots: 1,
+        reason: ''
+      });
+      
+      setShowSlotRequestModal(false);
+      
+    } catch (error: any) {
+      console.error('❌ Error processing slot request:', error);
+      alert(`枠追加申請の処理に失敗しました: ${error.message}`);
+    }
+  };
+
   // Delete user
   const handleDeleteUser = async (userId: string, userType: 'manager' | 'staff') => {
     if (!confirm(`この${userType === 'manager' ? '店長' : 'スタッフ'}を削除してもよろしいですか？`)) return;
@@ -315,7 +351,20 @@ export default function ManagersPage() {
                   </div>
                 </div>
                 <div className="flex flex-row space-x-2 lg:space-x-3">
-
+                  <button
+                    onClick={() => setShowCreateManagerModal(true)}
+                    className="inline-flex items-center justify-center px-2 lg:px-4 py-1.5 lg:py-2 bg-gradient-to-r from-teal-500 to-cyan-600 text-white rounded-lg lg:rounded-xl hover:from-teal-600 hover:to-cyan-700 transition-all duration-200 shadow-lg hover:shadow-xl border border-white/20"
+                  >
+                    <Plus className="h-3 lg:h-4 w-3 lg:w-4 mr-1 lg:mr-2" />
+                    <span className="text-xs lg:text-base">新規店長</span>
+                  </button>
+                  <button
+                    onClick={() => setShowSlotRequestModal(true)}
+                    className="inline-flex items-center justify-center px-2 lg:px-4 py-1.5 lg:py-2 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg lg:rounded-xl hover:from-orange-600 hover:to-red-700 transition-all duration-200 shadow-lg hover:shadow-xl border border-white/20"
+                  >
+                    <Plus className="h-3 lg:h-4 w-3 lg:w-4 mr-1 lg:mr-2" />
+                    <span className="text-xs lg:text-base">枠追加</span>
+                  </button>
                   <button
                     onClick={() => {
                       refreshShopsData();
@@ -729,6 +778,89 @@ export default function ManagersPage() {
                   className="px-6 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl hover:from-emerald-600 hover:to-teal-700 transition-all duration-200 shadow-lg"
                 >
                   スタッフを作成
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Slot Request Modal */}
+      {showSlotRequestModal && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-2xl p-8 w-full max-w-md max-h-[90vh] overflow-y-auto border border-white/20">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl">
+                  <Plus className="h-6 w-6 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-800">枠追加申請</h2>
+              </div>
+              <button
+                onClick={() => setShowSlotRequestModal(false)}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSlotRequest} className="space-y-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">対象店長 *</label>
+                  <select
+                    value={slotRequestFormData.managerId}
+                    onChange={(e) => setSlotRequestFormData({ ...slotRequestFormData, managerId: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-white/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    required
+                  >
+                    <option value="">店長を選択してください</option>
+                    {localManagersData.map((manager) => (
+                      <option key={manager.manager.uid} value={manager.manager.uid}>
+                        {manager.manager.name} (現在: 5枠)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">追加枠数 *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={slotRequestFormData.requestedSlots}
+                    onChange={(e) => setSlotRequestFormData({ ...slotRequestFormData, requestedSlots: parseInt(e.target.value) || 1 })}
+                    className="w-full px-4 py-2.5 bg-white/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">申請理由 *</label>
+                  <textarea
+                    value={slotRequestFormData.reason}
+                    onChange={(e) => setSlotRequestFormData({ ...slotRequestFormData, reason: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-white/80 backdrop-blur-sm border border-slate-200/50 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all resize-none"
+                    rows={4}
+                    placeholder="枠追加が必要な理由を入力してください..."
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowSlotRequestModal(false)}
+                  className="px-6 py-2.5 text-slate-600 bg-slate-100/80 backdrop-blur-sm rounded-xl hover:bg-slate-200/80 transition-all duration-200 border border-slate-300/50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-xl hover:from-orange-600 hover:to-red-700 transition-all duration-200 shadow-lg"
+                >
+                  申請する
                 </button>
               </div>
             </form>
