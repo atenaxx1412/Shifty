@@ -34,6 +34,7 @@ interface CalendarCell {
 }
 
 export default function NewShiftRequestPage() {
+  // Fixed: Date format issue
   const { currentUser } = useAuth();
 
   // 来月を初期表示
@@ -56,6 +57,8 @@ export default function NewShiftRequestPage() {
   const [showAIRecommendations, setShowAIRecommendations] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSubmittedSuccessfully, setIsSubmittedSuccessfully] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // 利用可能なポジション
   const availablePositions = [
@@ -190,7 +193,18 @@ export default function NewShiftRequestPage() {
 
   // 下書き保存
   const saveDraft = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      console.error('❌ SaveDraft: No currentUser available');
+      return;
+    }
+
+    console.log('💾 SaveDraft: Starting draft save process:', {
+      userId: currentUser.uid,
+      userName: currentUser.name,
+      managerId: currentUser.managerId,
+      targetMonth: format(currentMonth, 'yyyy-MM'),
+      dayRequestsCount: monthlyRequest.dayRequests?.length || 0
+    });
 
     setIsSaving(true);
     try {
@@ -201,10 +215,30 @@ export default function NewShiftRequestPage() {
         title: monthlyRequest.title || `${format(currentMonth, 'yyyy年M月')}のシフト希望`
       };
 
-      await shiftRequestService.createMonthlyShiftRequest(requestData, currentUser);
+      console.log('📝 SaveDraft: Request data prepared:', {
+        ...requestData,
+        dayRequests: requestData.dayRequests?.map(req => ({
+          date: req.date,
+          preference: req.preference,
+          timeSlots: req.timeSlots
+        }))
+      });
+
+      const result = await shiftRequestService.createMonthlyShiftRequest(requestData, currentUser);
+      console.log('✅ SaveDraft: Draft saved successfully:', {
+        requestId: result.monthlyRequestId,
+        status: result.status
+      });
       alert('下書きを保存しました');
     } catch (error) {
-      console.error('下書き保存エラー:', error);
+      console.error('❌ SaveDraft: Draft save failed:', {
+        error: error.message,
+        errorCode: error.code,
+        userId: currentUser.uid,
+        managerId: currentUser.managerId,
+        targetMonth: format(currentMonth, 'yyyy-MM'),
+        fullError: error
+      });
       alert('保存に失敗しました');
     } finally {
       setIsSaving(false);
@@ -213,7 +247,22 @@ export default function NewShiftRequestPage() {
 
   // 提出
   const submitRequest = async () => {
-    if (!currentUser || !monthlyRequest.dayRequests?.length) return;
+    if (!currentUser || !monthlyRequest.dayRequests?.length) {
+      console.error('❌ SubmitRequest: Validation failed:', {
+        hasCurrentUser: !!currentUser,
+        dayRequestsCount: monthlyRequest.dayRequests?.length || 0
+      });
+      return;
+    }
+
+    console.log('📤 SubmitRequest: Starting shift request submission:', {
+      userId: currentUser.uid,
+      userName: currentUser.name,
+      managerId: currentUser.managerId,
+      targetMonth: format(currentMonth, 'yyyy-MM'),
+      dayRequestsCount: monthlyRequest.dayRequests.length,
+      title: monthlyRequest.title || `${format(currentMonth, 'yyyy年M月')}のシフト希望`
+    });
 
     setIsSubmitting(true);
     try {
@@ -225,13 +274,53 @@ export default function NewShiftRequestPage() {
         status: 'submitted' as const
       };
 
+      console.log('📋 SubmitRequest: Request data prepared:', {
+        ...requestData,
+        dayRequests: requestData.dayRequests?.map((req, index) => ({
+          index,
+          date: req.date,
+          preference: req.preference,
+          timeSlots: req.timeSlots,
+          positions: req.positions
+        }))
+      });
+
+      console.log('🔄 SubmitRequest: Step 1 - Creating monthly shift request...');
       const result = await shiftRequestService.createMonthlyShiftRequest(requestData, currentUser);
+
+      console.log('✅ SubmitRequest: Step 1 Complete - Request created:', {
+        requestId: result.monthlyRequestId,
+        status: result.status,
+        createdAt: result.createdAt
+      });
+
+      console.log('🔄 SubmitRequest: Step 2 - Submitting request...');
       await shiftRequestService.submitMonthlyShiftRequest(result.monthlyRequestId, currentUser);
 
-      alert('シフト希望を提出しました！');
+      console.log('✅ SubmitRequest: Step 2 Complete - Request submitted successfully');
+
+      console.log('🎉 SubmitRequest: Full submission process completed successfully:', {
+        finalRequestId: result.monthlyRequestId,
+        staffId: currentUser.uid,
+        managerId: currentUser.managerId,
+        targetMonth: format(currentMonth, 'yyyy-MM'),
+        totalDays: requestData.dayRequests.length
+      });
+
+      // 成功状態の設定
+      setIsSubmittedSuccessfully(true);
+      setShowSuccessModal(true);
       setMonthlyRequest({ title: '', dayRequests: [], overallNote: '', status: 'draft' });
     } catch (error) {
-      console.error('提出エラー:', error);
+      console.error('❌ SubmitRequest: Submission failed:', {
+        error: error.message,
+        errorCode: error.code,
+        userId: currentUser.uid,
+        managerId: currentUser.managerId,
+        targetMonth: format(currentMonth, 'yyyy-MM'),
+        dayRequestsCount: monthlyRequest.dayRequests?.length,
+        fullError: error
+      });
       alert('提出に失敗しました');
     } finally {
       setIsSubmitting(false);
@@ -274,6 +363,29 @@ export default function NewShiftRequestPage() {
       <DashboardLayout>
         <div className="space-y-6">
 
+          {/* Success Banner */}
+          {isSubmittedSuccessfully && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="h-6 w-6 text-green-600 flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="text-sm font-semibold text-green-900">
+                    シフト希望の提出が完了しました！
+                  </h3>
+                  <p className="text-sm text-green-700 mt-1">
+                    管理者が確認後、結果をお知らせします。新しい希望を作成する場合は、下記フォームをご利用ください。
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsSubmittedSuccessfully(false)}
+                  className="text-green-600 hover:text-green-800 text-sm font-medium"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
+
           {showAIRecommendations && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-white rounded-lg p-4">
@@ -315,6 +427,7 @@ export default function NewShiftRequestPage() {
                   </div>
                 </div>
               </div>
+          )}
             </div>
 
             {aiRecommendations.alternativeSlots.length > 0 && (
@@ -325,12 +438,11 @@ export default function NewShiftRequestPage() {
                 </div>
                 {aiRecommendations.alternativeSlots.map((slot, index) => (
                   <div key={index} className="text-sm text-yellow-700">
-                    {format(slot.date, 'MM/dd (E)', { locale: ja })} {slot.time} - 推奨度 {Math.round(slot.score * 100)}%
+                    {`${format(slot.date, 'MM月dd日 (E)', { locale: ja })} ${slot.time} - 推奨度 ${Math.round(slot.score * 100)}%`}
                   </div>
                 ))}
               </div>
             )}
-          )}
 
           {/* Month Selector */}
           <div className="bg-white rounded-lg shadow p-6">
@@ -386,18 +498,28 @@ export default function NewShiftRequestPage() {
                     {week.map((date, dayIndex) => {
                       const dayRequest = getDayRequest(date);
                       const isCurrentMonthDate = date.getMonth() === currentMonth.getMonth();
+                      const dayOfWeek = date.getDay();
+                      const isSaturday = dayOfWeek === 6;
+                      const isSunday = dayOfWeek === 0;
+
+                      const getBackgroundColor = () => {
+                        if (!isCurrentMonthDate) return 'bg-gray-50 text-gray-400';
+                        if (isSaturday) return 'bg-blue-50 hover:bg-blue-100 cursor-pointer';
+                        if (isSunday) return 'bg-red-50 hover:bg-red-100 cursor-pointer';
+                        return 'bg-white hover:bg-blue-50 cursor-pointer';
+                      };
 
                       return (
                         <div
                           key={dayIndex}
-                          className={`p-2 border-r border-gray-200 last:border-r-0 min-h-[80px] ${
-                            isCurrentMonthDate
-                              ? 'bg-white hover:bg-blue-50 cursor-pointer'
-                              : 'bg-gray-50 text-gray-400'
-                          }`}
+                          className={`p-2 border-r border-gray-200 last:border-r-0 min-h-[80px] ${getBackgroundColor()}`}
                           onClick={() => isCurrentMonthDate && handleDateClick(date)}
                         >
-                          <div className="text-sm font-medium mb-1">
+                          <div className={`text-sm font-medium mb-1 ${
+                            isSaturday ? 'text-blue-700' :
+                            isSunday ? 'text-red-700' :
+                            isCurrentMonthDate ? 'text-gray-900' : 'text-gray-400'
+                          }`}>
                             {format(date, 'd')}
                           </div>
                           {dayRequest && (
@@ -510,6 +632,7 @@ export default function NewShiftRequestPage() {
                 <h3 className="text-sm font-semibold text-blue-900 mb-2">提出について</h3>
                 <ul className="text-sm text-blue-800 space-y-1">
                   <li>• カレンダーの日付をクリックしてシフト希望を入力できます</li>
+                  <li>• 希望・可能・不可のいずれも時間帯を指定できます</li>
                   <li>• 月全体のシフト希望をまとめて提出できます</li>
                   <li>• 提出後の変更は管理者の承認が必要になります</li>
                   <li>• AI推奨機能を参考に最適な時間帯を選択してください</li>
@@ -517,12 +640,11 @@ export default function NewShiftRequestPage() {
               </div>
             </div>
           </div>
-        </div>
 
         {/* Day Selection Modal */}
         {showDayModal && selectedDate && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-md flex items-center justify-center p-4 z-50">
+            <div className="bg-white/90 backdrop-blur-sm border border-white/20 shadow-2xl rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900">
                   {format(selectedDate, 'M月d日(E)', { locale: ja })}のシフト希望
@@ -549,16 +671,16 @@ export default function NewShiftRequestPage() {
                     }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="preferred">希望 - 是非この時間で働きたい</option>
-                    <option value="available">可能 - 必要であれば勤務可能</option>
-                    <option value="unavailable">不可 - この時間は勤務不可</option>
+                    <option value="preferred">希望 - 是非この時間帯で働きたい</option>
+                    <option value="available">可能 - 必要であればこの時間帯で勤務可能</option>
+                    <option value="unavailable">不可 - この時間帯は勤務不可</option>
                   </select>
                 </div>
 
                 {/* Time Slots */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">
-                    希望時間帯
+                    対象時間帯
                   </label>
                   <div className="space-y-3">
                     {currentDayRequest.timeSlots.map((slot, index) => (
@@ -620,7 +742,7 @@ export default function NewShiftRequestPage() {
                               }));
                             }
                           }}
-                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          className="h-4 w-4 appearance-none rounded border-2 border-gray-300 bg-white checked:bg-blue-600 checked:border-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-0 checked:before:content-['✓'] checked:before:text-white checked:before:text-xs checked:before:flex checked:before:justify-center checked:before:items-center checked:before:h-full"
                         />
                         <span className="text-sm text-gray-700">{position}</span>
                       </label>
@@ -673,6 +795,48 @@ export default function NewShiftRequestPage() {
                     保存
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Success Modal */}
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-md flex items-center justify-center p-4 z-50">
+            <div className="bg-white/90 backdrop-blur-sm border border-white/20 shadow-2xl rounded-2xl p-6 w-full max-w-md">
+              <div className="text-center">
+                <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                  <CheckCircle className="h-6 w-6 text-green-600" />
+                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  提出完了！
+                </h3>
+                <p className="text-sm text-gray-600 mb-2">
+                  シフト希望の提出が完了しました。
+                </p>
+                <p className="text-sm text-gray-600 mb-6">
+                  管理者が確認後、結果をお知らせします。
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center space-x-2">
+                    <Send className="h-5 w-5 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-900">
+                      提出先: 管理者へ送信済み
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-700 mt-1">
+                    通常1-2営業日以内に返答があります
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowSuccessModal(false);
+                    setIsSubmittedSuccessfully(false);
+                  }}
+                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  閉じる
+                </button>
               </div>
             </div>
           </div>

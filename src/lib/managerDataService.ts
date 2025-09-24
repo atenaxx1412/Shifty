@@ -338,6 +338,18 @@ export class ManagerDataService {
         this.getOptimizedTemplate(managerId, month)
       ]);
 
+      // デバッグ情報を追加
+      console.log('🔍 Debug - Month range:', { startOfMonth, endOfMonth });
+      console.log('🔍 Debug - Raw shifts data:', shifts);
+      console.log('🔍 Debug - Number of shift days:', shifts.length);
+      shifts.forEach((shift, index) => {
+        console.log(`🔍 Debug - Shift ${index + 1}:`, {
+          date: shift.date,
+          slotsCount: shift.slots ? shift.slots.length : 0,
+          slots: shift.slots
+        });
+      });
+
       // 週別データの計算
       const weeklyBreakdown = this.calculateWeeklyBreakdown(shifts, startOfMonth, endOfMonth);
 
@@ -399,7 +411,9 @@ export class ManagerDataService {
   private static calculateFilledShifts(shifts: any[]): number {
     return shifts.reduce((total, shift) => {
       if (shift.slots && Array.isArray(shift.slots)) {
-        const filledSlots = shift.slots.filter((slot: any) => slot.userId && slot.userId.trim() !== '');
+        const filledSlots = shift.slots.filter((slot: any) =>
+          slot.assignedStaff && Array.isArray(slot.assignedStaff) && slot.assignedStaff.length > 0
+        );
         return total + filledSlots.length;
       }
       return total;
@@ -425,17 +439,18 @@ export class ManagerDataService {
         return shiftDate >= currentWeekStart && shiftDate <= weekEnd;
       });
 
-      const totalSlots = this.calculateTotalShifts(weekShifts);
-      const filledSlots = this.calculateFilledShifts(weekShifts);
-      const fillRate = totalSlots > 0 ? (filledSlots / totalSlots) * 100 : 0;
+      // 新しい計算ロジック
+      const shiftCount = weekShifts.length; // 実際のシフト日数
+      const totalHours = this.calculateWeeklyTotalHours(weekShifts);
+      const laborCost = this.calculateWeeklyLaborCost(weekShifts);
 
       weeks.push({
         weekNumber,
         startDate: currentWeekStart.toISOString().split('T')[0],
         endDate: weekEnd.toISOString().split('T')[0],
-        totalSlots,
-        filledSlots,
-        fillRate
+        shiftCount,
+        totalHours,
+        laborCost
       });
 
       // 次の週へ
@@ -444,6 +459,86 @@ export class ManagerDataService {
     }
 
     return weeks;
+  }
+
+  /**
+   * 週別合計時間を計算
+   */
+  private static calculateWeeklyTotalHours(weekShifts: any[]): number {
+    let totalHours = 0;
+
+    weekShifts.forEach(shift => {
+      if (shift.slots && Array.isArray(shift.slots)) {
+        shift.slots.forEach((slot: any) => {
+          // assignedStaffがある場合のみ計算
+          if (slot.assignedStaff && Array.isArray(slot.assignedStaff) && slot.assignedStaff.length > 0) {
+            // 時間情報がある場合は実際の時間を計算、ない場合は4時間固定
+            const workHours = this.calculateSlotWorkingHours(slot);
+            totalHours += workHours * slot.assignedStaff.length; // スタッフ数分掛ける
+          }
+        });
+      }
+    });
+
+    return Math.round(totalHours * 10) / 10; // 小数点第1位で四捨五入
+  }
+
+  /**
+   * 週別人件費を計算
+   */
+  private static calculateWeeklyLaborCost(weekShifts: any[]): number {
+    let totalCost = 0;
+
+    // スタッフデータが必要だが、この関数内でアクセスするのは難しいので
+    // 簡易版として平均時給1000円で計算
+    const averageHourlyRate = 1000;
+
+    weekShifts.forEach(shift => {
+      if (shift.slots && Array.isArray(shift.slots)) {
+        shift.slots.forEach((slot: any) => {
+          if (slot.assignedStaff && Array.isArray(slot.assignedStaff) && slot.assignedStaff.length > 0) {
+            const workHours = this.calculateSlotWorkingHours(slot);
+            totalCost += workHours * slot.assignedStaff.length * averageHourlyRate;
+          }
+        });
+      }
+    });
+
+    return Math.round(totalCost);
+  }
+
+  /**
+   * スロットの労働時間を計算
+   */
+  private static calculateSlotWorkingHours(slot: any): number {
+    // タイムスロットに基づく基本時間（startTime/endTimeがない場合の代替）
+    const timeSlotHours: { [key: string]: number } = {
+      'morning': 4,   // 朝シフト
+      'afternoon': 4, // 昼シフト
+      'evening': 4    // 夜シフト
+    };
+
+    // startTimeとendTimeがある場合は実際の時間を計算
+    if (slot.startTime && slot.endTime) {
+      try {
+        const start = new Date(`1970-01-01T${slot.startTime}:00`);
+        const end = new Date(`1970-01-01T${slot.endTime}:00`);
+        const diffMs = end.getTime() - start.getTime();
+        const diffHours = diffMs / (1000 * 60 * 60);
+        return diffHours > 0 ? diffHours : 4; // 負の値の場合は4時間固定
+      } catch {
+        // 時間パース失敗時はタイムスロット基準
+        return timeSlotHours[slot.timeSlot] || 4;
+      }
+    }
+
+    // timeSlotがある場合はそれに基づく
+    if (slot.timeSlot && timeSlotHours[slot.timeSlot]) {
+      return timeSlotHours[slot.timeSlot];
+    }
+
+    // デフォルトは4時間
+    return 4;
   }
 
   /**
@@ -600,9 +695,9 @@ export interface WeeklyShiftData {
   weekNumber: number;
   startDate: string;
   endDate: string;
-  totalSlots: number;
-  filledSlots: number;
-  fillRate: number;
+  shiftCount: number;  // シフト数（実際のシフト日数）
+  totalHours: number;  // 合計時間
+  laborCost: number;   // 人件費
 }
 
 export interface ProblemArea {

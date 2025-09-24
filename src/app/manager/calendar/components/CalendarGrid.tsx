@@ -4,7 +4,9 @@ import { format, isSameDay, startOfDay, addDays, startOfWeek, endOfWeek, startOf
 import { ja } from "date-fns/locale";
 import { User } from "@/types/auth";
 import { ShiftExtended, ShiftSlot } from "@/types/calendar";
-import { Plus, Edit, MessageCircle, AlertTriangle, CheckCircle } from "lucide-react";
+import { MonthlyShiftRequest, DayShiftRequest } from "@/types";
+import { Plus, Edit, MessageCircle, AlertTriangle, CheckCircle, Star, ThumbsUp, X } from "lucide-react";
+import { useState } from "react";
 
 interface StaffTimeSettings {
   [staffId: string]: {
@@ -40,6 +42,7 @@ interface CalendarGridProps {
   selectedDate: Date;
   staff: User[];
   shifts: ShiftExtended[];
+  shiftRequests: MonthlyShiftRequest[];
   loading: boolean;
   onCreateShift: (date?: Date, staff?: User) => void;
   onOpenShiftDetail: (shift: ShiftExtended, slot: ShiftSlot, staff: User) => void;
@@ -64,6 +67,7 @@ export default function CalendarGrid({
   selectedDate,
   staff,
   shifts,
+  shiftRequests,
   loading,
   onCreateShift,
   onOpenShiftDetail,
@@ -72,6 +76,104 @@ export default function CalendarGrid({
   getStaffShiftsForDate,
   getShiftsForDate
 }: CalendarGridProps) {
+
+  // 警告ダイアログの状態管理
+  const [showUnavailableWarning, setShowUnavailableWarning] = useState(false);
+  const [warningData, setWarningData] = useState<{
+    date: Date | null;
+    staff: User | null;
+    dayRequest: DayShiftRequest | null;
+  }>({ date: null, staff: null, dayRequest: null });
+
+  // スタッフの日別シフト希望を取得するヘルパー関数
+  const getStaffRequestForDate = (staffId: string, date: Date, targetMonth: string): DayShiftRequest | null => {
+    // 対象月のシフト希望を見つける
+    const monthlyRequest = shiftRequests.find(req =>
+      req.staffId === staffId &&
+      req.targetMonth === targetMonth &&
+      (req.status === 'submitted' || req.status === 'approved')
+    );
+
+    if (!monthlyRequest || !monthlyRequest.dayRequests) {
+      return null;
+    }
+
+    // 指定日のシフト希望を見つける
+    const dayRequest = monthlyRequest.dayRequests.find(dayReq => {
+      const reqDate = new Date(dayReq.date);
+      return isSameDay(reqDate, date);
+    });
+
+    return dayRequest || null;
+  };
+
+  // 希望レベルに応じたスタイルを取得
+  const getRequestStyle = (preference: string) => {
+    switch (preference) {
+      case 'preferred':
+        return {
+          bgColor: 'bg-yellow-100',
+          textColor: 'text-yellow-800',
+          borderColor: 'border-yellow-300',
+          icon: null,
+          label: '希'
+        };
+      case 'available':
+        return {
+          bgColor: 'bg-green-50',
+          textColor: 'text-green-700',
+          borderColor: 'border-green-300',
+          icon: <ThumbsUp className="h-3 w-3" />,
+          label: '可'
+        };
+      case 'unavailable':
+        return {
+          bgColor: 'bg-red-100',
+          textColor: 'text-red-800',
+          borderColor: 'border-red-400',
+          icon: <X className="h-3 w-3 text-red-700" />,
+          label: '不'
+        };
+      default:
+        return {
+          bgColor: 'bg-gray-50',
+          textColor: 'text-gray-700',
+          borderColor: 'border-gray-300',
+          icon: null,
+          label: ''
+        };
+    }
+  };
+
+  // シフト作成時の警告チェックとハンドリング
+  const handleCreateShift = (date: Date, staff: User) => {
+    const targetMonth = format(date, 'yyyy-MM');
+    const dayRequest = getStaffRequestForDate(staff.uid, date, targetMonth);
+
+    // 不可の希望がある場合は警告を表示
+    if (dayRequest && dayRequest.preference === 'unavailable') {
+      setWarningData({ date, staff, dayRequest });
+      setShowUnavailableWarning(true);
+    } else {
+      // 通常のシフト作成
+      onCreateShift(date, staff);
+    }
+  };
+
+  // 警告後の続行処理
+  const proceedWithShiftCreation = () => {
+    if (warningData.date && warningData.staff) {
+      onCreateShift(warningData.date, warningData.staff);
+    }
+    setShowUnavailableWarning(false);
+    setWarningData({ date: null, staff: null, dayRequest: null });
+  };
+
+  // 警告のキャンセル処理
+  const cancelShiftCreation = () => {
+    setShowUnavailableWarning(false);
+    setWarningData({ date: null, staff: null, dayRequest: null });
+  };
 
   // 表示形式に応じたUIサイズクラスを取得
   const getCellSizeClasses = (): CellSizes => {
@@ -184,6 +286,18 @@ export default function CalendarGrid({
 
   const dateRange = getDateRange();
   const monthDates = dateRange.dates;
+
+  // デバッグ情報を追加
+  console.log('🔍 Calendar Debug Info:');
+  console.log('  Selected Date:', selectedDate);
+  console.log('  Calendar View:', calendarView);
+  console.log('  Date Range:', dateRange);
+  console.log('  Month Dates Count:', monthDates.length);
+  console.log('  Month Dates:', monthDates.map(d => d.toDateString()));
+  console.log('  Shifts:', shifts.map(s => ({
+    id: s.shiftId,
+    date: s.date instanceof Date ? s.date.toDateString() : new Date(s.date).toDateString()
+  })));
 
   // 従来のカレンダー形式用の週を取得
   const getCalendarWeeks = () => {
@@ -604,17 +718,48 @@ export default function CalendarGrid({
                               </div>
                             ))}
 
-                            {myShifts.length === 0 && !isPast && (
-                              <button
-                                onClick={() => onCreateShift(date, staffMember)}
-                                className={`w-full ${
-                                  calendarView === "month" ? "h-6" : "h-8"
-                                } border-2 border-dashed border-gray-300 rounded text-gray-400 hover:border-gray-500 hover:text-gray-600 transition-colors flex items-center justify-center hover:bg-gray-50`}
-                                title={`${staffMember.name}さんのシフトを設定（直接反映）`}
-                              >
-                                <Plus className={cellSizes.iconSize} />
-                              </button>
-                            )}
+                            {/* シフト希望表示 または シフト作成ボタン */}
+                            {(() => {
+                              const targetMonth = format(date, 'yyyy-MM');
+                              const dayRequest = getStaffRequestForDate(staffMember.uid, date, targetMonth);
+
+                              // シフト希望がある場合は希望情報を表示（クリック可能）
+                              if (dayRequest) {
+                                const style = getRequestStyle(dayRequest.preference);
+
+                                return (
+                                  <button
+                                    onClick={() => onCreateShift(date, staffMember)}
+                                    className={`${style.bgColor} ${style.textColor} ${style.borderColor} border rounded px-2 py-1 text-xs flex items-center justify-center gap-1 w-full hover:opacity-80 transition-opacity cursor-pointer`}
+                                    title={`希望レベル: ${dayRequest.preference === 'preferred' ? '希望' : dayRequest.preference === 'available' ? '可能' : '不可'}${dayRequest.timeSlots && dayRequest.timeSlots.length > 0 ? ` (${dayRequest.timeSlots[0].start}-${dayRequest.timeSlots[0].end})` : ''} - クリックでシフト作成`}
+                                  >
+                                    {style.icon && style.icon}
+                                    {dayRequest.timeSlots && dayRequest.timeSlots.length > 0 && (
+                                      <span className="text-xs font-medium">
+                                        {dayRequest.timeSlots[0].start}-{dayRequest.timeSlots[0].end}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              }
+
+                              // シフト希望がなく、既存シフトもなく、過去日でない場合は+ボタンを表示
+                              if (myShifts.length === 0 && !isPast) {
+                                return (
+                                  <button
+                                    onClick={() => onCreateShift(date, staffMember)}
+                                    className={`w-full ${
+                                      calendarView === "month" ? "h-6" : "h-8"
+                                    } border-2 border-dashed border-gray-300 rounded text-gray-400 hover:border-gray-500 hover:text-gray-600 transition-colors flex items-center justify-center hover:bg-gray-50`}
+                                    title={`${staffMember.name}さんのシフトを設定（直接反映）`}
+                                  >
+                                    <Plus className={cellSizes.iconSize} />
+                                  </button>
+                                );
+                              }
+
+                              return null;
+                            })()}
                           </div>
                         </div>
                       );

@@ -208,10 +208,10 @@ class AttendanceService {
     limitCount: number = 30
   ): Promise<AttendanceRecord[]> {
     const attendanceRef = collection(db, this.ATTENDANCE_COLLECTION);
+    // Remove orderBy to avoid index requirement
     let q = query(
       attendanceRef,
       where('userId', '==', userId),
-      orderBy('date', 'desc'),
       limit(limitCount)
     );
 
@@ -237,7 +237,7 @@ class AttendanceService {
         createdAt: data.createdAt.toDate(),
         updatedAt: data.updatedAt.toDate(),
       } as AttendanceRecord;
-    });
+    }).sort((a, b) => b.date.getTime() - a.date.getTime()); // Client-side sorting by date (desc)
   }
 
   /**
@@ -248,12 +248,11 @@ class AttendanceService {
     const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     
     const attendanceRef = collection(db, this.ATTENDANCE_COLLECTION);
+    // Remove orderBy to avoid index requirement, get multiple records and sort client-side
     const q = query(
       attendanceRef,
       where('userId', '==', userId),
-      where('date', '>=', Timestamp.fromDate(startOfDay)),
-      orderBy('date', 'desc'),
-      limit(1)
+      where('date', '>=', Timestamp.fromDate(startOfDay))
     );
 
     const querySnapshot = await getDocs(q);
@@ -262,7 +261,14 @@ class AttendanceService {
       return null;
     }
 
-    const doc = querySnapshot.docs[0];
+    // Sort client-side and get the latest record
+    const sortedDocs = querySnapshot.docs.sort((a, b) => {
+      const aDate = a.data().date.toDate();
+      const bDate = b.data().date.toDate();
+      return bDate.getTime() - aDate.getTime(); // Latest first
+    });
+
+    const doc = sortedDocs[0];
     const data = doc.data();
     
     return {

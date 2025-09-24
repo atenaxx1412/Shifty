@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import AppHeader from '@/components/layout/AppHeader';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import { UserCheck, Calendar, Clock, Bell, FileText, ArrowRight, Star, Users, Play, Square, MapPin, Timer, DollarSign, CalendarCheck } from 'lucide-react';
+import { UserCheck, Calendar, Clock, Bell, FileText, ArrowRight, Star, Users, Play, Square, MapPin, Timer, DollarSign, CalendarCheck, MessageCircle, MessageSquare } from 'lucide-react';
 import { format, addDays, startOfMonth, endOfMonth, differenceInDays, addMonths, setDate } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { attendanceService } from '@/lib/attendanceService';
@@ -70,10 +70,10 @@ export default function StaffPage() {
       const monthStart = startOfMonth(currentDate);
       const monthEnd = endOfMonth(currentDate);
 
+      // Remove orderBy to avoid index requirement
       const shiftsQuery = query(
         collection(db, 'shifts'),
-        where('managerId', '==', currentUser?.managerId),
-        orderBy('date', 'asc')
+        where('managerId', '==', currentUser?.managerId)
       );
 
       const snapshot = await getDocs(shiftsQuery);
@@ -108,11 +108,10 @@ export default function StaffPage() {
       const monthStart = startOfMonth(currentDate);
       const monthEnd = endOfMonth(currentDate);
 
+      // Remove date range query to avoid index requirement, filter client-side
       const attendanceQuery = query(
         collection(db, 'attendanceRecords'),
-        where('userId', '==', userId),
-        where('date', '>=', monthStart),
-        where('date', '<=', monthEnd)
+        where('userId', '==', userId)
       );
 
       const snapshot = await getDocs(attendanceQuery);
@@ -120,7 +119,10 @@ export default function StaffPage() {
 
       snapshot.docs.forEach(doc => {
         const record = doc.data() as AttendanceRecord;
-        if (record.totalWorkTime) {
+        const recordDate = record.date instanceof Date ? record.date : record.date.toDate();
+
+        // Client-side date filtering
+        if (recordDate >= monthStart && recordDate <= monthEnd && record.totalWorkTime) {
           totalMinutes += record.totalWorkTime;
         }
       });
@@ -284,11 +286,9 @@ export default function StaffPage() {
 
   const staffActions = [
     { icon: Calendar, label: 'シフト確認', href: '/staff/schedule', description: '自分の今後のシフト予定を確認', color: 'bg-blue-500' },
-    { icon: Clock, label: 'シフト希望提出', href: '/staff/requests/new', description: '新しいシフト希望を申請', color: 'bg-green-500' },
-    { icon: FileText, label: 'シフト希望履歴', href: '/staff/requests', description: '過去のシフト希望を確認', color: 'bg-purple-500' },
-    { icon: Bell, label: 'シフト交換', href: '/staff/exchanges', description: 'スタッフ間でのシフト交換', color: 'bg-yellow-500' },
-    { icon: Users, label: '勤務実績', href: '/staff/attendance', description: '過去の勤務実績と給与詳細', color: 'bg-indigo-500' },
-    { icon: Star, label: '緊急シフト', href: '/staff/urgent', description: '緊急で募集中のシフト確認', color: 'bg-red-500' },
+    { icon: Clock, label: 'シフト提出', href: '/staff/requests/new', description: '新しいシフト希望を申請', color: 'bg-green-500' },
+    { icon: MessageCircle, label: 'チャット', href: '/staff/chat', description: 'スタッフ間でのコミュニケーション', color: 'bg-purple-500' },
+    { icon: MessageSquare, label: 'お問い合わせ', href: '/staff/contact', description: '管理者に問題や質問を送信', color: 'bg-orange-500' },
   ];
 
   const upcomingShifts = [

@@ -150,10 +150,10 @@ export class ShiftRequestService {
 
     console.log('📡 Setting up real-time subscription for staff monthly requests:', staffId);
 
+    // Remove orderBy to avoid index requirement
     const q = query(
       collection(db, 'monthly_shift_requests'),
-      where('staffId', '==', staffId),
-      orderBy('createdAt', 'desc')
+      where('staffId', '==', staffId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -175,9 +175,22 @@ export class ShiftRequestService {
       });
 
       console.log(`📊 Real-time update: ${requests.length} monthly requests for staff ${staffId}`);
-      callback(requests);
+      // Client-side sorting by createdAt (desc)
+      const sortedRequests = requests.sort((a, b) => {
+        const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+        const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+        return bTime - aTime;
+      });
+      callback(sortedRequests);
     }, (error) => {
-      console.error('❌ Error in staff monthly requests subscription:', error);
+      console.error('❌ Error in staff monthly requests subscription:', {
+        staffId,
+        error: error?.message || String(error),
+        code: error?.code || 'unknown',
+        fullError: error
+      });
+      // エラーが発生してもコールバックを呼んで、空の配列を返す
+      callback([]);
     });
 
     this.realtimeListeners.set(listenerKey, unsubscribe);
@@ -199,34 +212,52 @@ export class ShiftRequestService {
 
     console.log('📡 Setting up real-time subscription for manager monthly requests:', managerId);
 
+    // Remove orderBy to avoid index requirement
     const q = query(
       collection(db, 'monthly_shift_requests'),
-      where('managerId', '==', managerId),
-      orderBy('submittedAt', 'desc')
+      where('managerId', '==', managerId)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const requests: MonthlyShiftRequest[] = [];
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        requests.push({
-          ...data,
-          monthlyRequestId: doc.id,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date(),
-          submittedAt: data.submittedAt?.toDate(),
-          reviewedAt: data.reviewedAt?.toDate(),
-          dayRequests: data.dayRequests?.map((day: Partial<DayShiftRequest> & { date?: any }) => ({
-            ...day,
-            date: day.date?.toDate() || new Date(day.date)
-          })) || []
-        } as MonthlyShiftRequest);
-      });
+      try {
+        const requests: MonthlyShiftRequest[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          requests.push({
+            ...data,
+            monthlyRequestId: doc.id,
+            createdAt: data.createdAt?.toDate() || new Date(),
+            updatedAt: data.updatedAt?.toDate() || new Date(),
+            submittedAt: data.submittedAt?.toDate(),
+            reviewedAt: data.reviewedAt?.toDate(),
+            dayRequests: data.dayRequests?.map((day: Partial<DayShiftRequest> & { date?: any }) => ({
+              ...day,
+              date: day.date?.toDate() || new Date(day.date)
+            })) || []
+          } as MonthlyShiftRequest);
+        });
 
-      console.log(`📊 Real-time update: ${requests.length} monthly requests for manager ${managerId}`);
-      callback(requests);
+        console.log(`📊 Real-time update: ${requests.length} monthly requests for manager ${managerId}`);
+        // Client-side sorting by createdAt (desc)
+        const sortedRequests = requests.sort((a, b) => {
+          const aTime = a.createdAt instanceof Date ? a.createdAt.getTime() : new Date(a.createdAt).getTime();
+          const bTime = b.createdAt instanceof Date ? b.createdAt.getTime() : new Date(b.createdAt).getTime();
+          return bTime - aTime;
+        });
+        callback(sortedRequests);
+      } catch (processingError) {
+        console.error('❌ Error processing snapshot data:', processingError);
+        callback([]);
+      }
     }, (error) => {
-      console.error('❌ Error in manager monthly requests subscription:', error);
+      console.error('❌ Error in manager monthly requests subscription:', {
+        managerId,
+        error: error?.message || String(error),
+        code: error?.code || 'unknown',
+        fullError: error
+      });
+      // エラーが発生してもコールバックを呼んで、空の配列を返す
+      callback([]);
     });
 
     this.realtimeListeners.set(listenerKey, unsubscribe);

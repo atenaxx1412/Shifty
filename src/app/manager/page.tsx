@@ -75,6 +75,7 @@ export default function ManagerPage() {
 
   const managerActions = [
     { icon: Eye, label: 'シフト状況確認', href: '/manager/shift-overview', description: '全月のシフト割り振り状況を確認', color: 'bg-teal-500' },
+    { icon: FileText, label: 'シフト希望確認', href: '/manager/shift-requests', description: 'スタッフから提出されたシフト希望を確認・承認', color: 'bg-indigo-500' },
     { icon: Calendar, label: 'シフト作成', href: '/manager/calendar', description: 'カレンダービューでシフト作成・編集', color: 'bg-blue-500' },
     { icon: Users, label: 'スタッフ管理', href: '/manager/staff', description: 'スタッフの情報管理と権限設定', color: 'bg-purple-500' },
     { icon: ClipboardList, label: '人員テンプレート', href: '/manager/staffing-template', description: '月間必要人数の設定・管理', color: 'bg-green-500' },

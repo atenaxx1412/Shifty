@@ -21,6 +21,8 @@ import {
   StaffingTemplate,
 } from "@/lib/staffingTemplateService";
 import { ManagerDataService } from "@/lib/managerDataService";
+import { shiftRequestService } from "@/lib/shiftRequestService";
+import { MonthlyShiftRequest, DayShiftRequest } from "@/types";
 
 // 新しく作成したコンポーネントをインポート
 import {
@@ -79,17 +81,21 @@ export default function ManagerCalendarPage() {
     endTime: "17:00",
     positions: "",
     notes: "",
+    requiredStaff: "2",
   });
   const [createLoading, setCreateLoading] = useState(false);
   const [selectedShift, setSelectedShift] = useState<ShiftExtended | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [templates, setTemplates] = useState<StaffingTemplate[]>([]);
+  const [shiftRequests, setShiftRequests] = useState<MonthlyShiftRequest[]>([]);
 
   // データ取得とリアルタイム購読
   useEffect(() => {
-    console.log("👥 Setting up staff data subscription for manager:", managerUser.uid);
+    console.log("👥 Setting up data subscriptions for manager:", managerUser.uid);
 
     let unsubscribeStaff: (() => void) | null = null;
+    let unsubscribeShifts: (() => void) | null = null;
+    let unsubscribeRequests: (() => void) | null = null;
 
     const initializeData = async () => {
       try {
@@ -105,13 +111,26 @@ export default function ManagerCalendarPage() {
           }
         );
 
-        // その他のデータを並行取得
-        const [shiftsData, templatesData] = await Promise.all([
-          shiftService.getShiftsByShop(managerUser.uid),
-          StaffingTemplateService.getManagerTemplates(managerUser.uid),
-        ]);
+        // リアルタイムシフトデータ取得
+        unsubscribeShifts = shiftService.subscribeToShiftUpdates(
+          managerUser.uid,
+          (shiftsData) => {
+            console.log(`📅 Received ${shiftsData.length} shifts from Firestore`);
+            setShifts(shiftsData);
+          }
+        );
 
-        setShifts(shiftsData);
+        // リアルタイムシフト希望データ取得
+        unsubscribeRequests = shiftRequestService.subscribeToManagerMonthlyRequests(
+          managerUser.uid,
+          (requestsData) => {
+            console.log(`📋 Received ${requestsData.length} shift requests from Firestore`);
+            setShiftRequests(requestsData);
+          }
+        );
+
+        // テンプレートデータを取得（一回だけ）
+        const templatesData = await StaffingTemplateService.getManagerTemplates(managerUser.uid);
         setTemplates(templatesData);
       } catch (error) {
         console.error("Error fetching data:", error);
@@ -127,21 +146,15 @@ export default function ManagerCalendarPage() {
         console.log("🧹 Cleaning up staff subscription");
         unsubscribeStaff();
       }
-    };
-  }, [managerUser.uid]);
-
-  // 自動リフレッシュ (シフトデータのみ - スタッフデータはリアルタイム購読)
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const shiftsData = await shiftService.getShiftsByShop(managerUser.uid);
-        setShifts(shiftsData);
-      } catch (error) {
-        console.error("Error during auto-refresh:", error);
+      if (unsubscribeShifts) {
+        console.log("🧹 Cleaning up shifts subscription");
+        unsubscribeShifts();
       }
-    }, 15000);
-
-    return () => clearInterval(interval);
+      if (unsubscribeRequests) {
+        console.log("🧹 Cleaning up shift requests subscription");
+        unsubscribeRequests();
+      }
+    };
   }, [managerUser.uid]);
 
   // 日付変更ハンドラー
@@ -283,7 +296,7 @@ export default function ManagerCalendarPage() {
   };
 
   const handleSubmitShift = async () => {
-    if (!createModalDate) return;
+    if (!createModalDate || !managerUser) return;
 
     try {
       setCreateLoading(true);
@@ -291,48 +304,58 @@ export default function ManagerCalendarPage() {
       if (createModalStaff) {
         // 単一スタッフのシフト作成
         const shiftData = {
-          date: createModalDate.toISOString().split("T")[0],
-          startTime: formData.startTime,
-          endTime: formData.endTime,
-          positions: formData.positions.split(",").map(p => p.trim()).filter(p => p),
-          notes: formData.notes,
-          assignedUserId: createModalStaff.uid,
-          managerUid: managerUser.uid,
-          status: "confirmed" as const,
+          managerId: managerUser.uid,
+          date: createModalDate,
+          slots: [{
+            slotId: `slot_${Date.now()}`,
+            startTime: formData.startTime,
+            endTime: formData.endTime,
+            requiredStaff: 1,
+            assignedStaff: [createModalStaff.uid],
+            positions: formData.positions.split(",").map(p => p.trim()).filter(p => p),
+            requiredSkills: [],
+            priority: "medium" as const,
+            estimatedDuration: calculateDuration(formData.startTime, formData.endTime),
+          }],
         };
 
-        await shiftService.createShift(shiftData);
+        await shiftService.createShift(shiftData, managerUser);
       } else {
-        // 複数スタッフのシフト作成
-        const promises = selectedStaffForCalendar.map(async (staffId) => {
-          const staffSetting = staffTimeSettings[staffId] || formData;
-          const shiftData = {
-            date: createModalDate.toISOString().split("T")[0],
-            startTime: staffSetting.startTime,
-            endTime: staffSetting.endTime,
-            positions: staffSetting.positions.split(",").map(p => p.trim()).filter(p => p),
-            notes: staffSetting.notes,
-            assignedUserId: staffId,
-            managerUid: managerUser.uid,
-            status: "confirmed" as const,
-          };
+        // 自動割り当てシフト作成
+        const requiredStaffCount = parseInt(formData.requiredStaff || "2");
+        const shiftData = {
+          managerId: managerUser.uid,
+          date: createModalDate,
+          slots: [{
+            slotId: `slot_${Date.now()}`,
+            startTime: formData.startTime,
+            endTime: formData.endTime,
+            requiredStaff: requiredStaffCount,
+            assignedStaff: [], // 自動割り当てシステムが処理
+            positions: formData.positions.split(",").map(p => p.trim()).filter(p => p),
+            requiredSkills: [],
+            priority: "medium" as const,
+            estimatedDuration: calculateDuration(formData.startTime, formData.endTime),
+          }],
+        };
 
-          return shiftService.createShift(shiftData);
-        });
-
-        await Promise.all(promises);
+        await shiftService.createShift(shiftData, managerUser);
       }
 
-      // データを再取得
-      const newShifts = await shiftService.getShiftsByShop(managerUser.uid);
-      setShifts(newShifts);
-
+      // リアルタイムリスナーがデータを自動更新するので手動取得は不要
       handleCloseCreateModal();
     } catch (error) {
       console.error("Error creating shift:", error);
     } finally {
       setCreateLoading(false);
     }
+  };
+
+  // Duration calculation helper
+  const calculateDuration = (startTime: string, endTime: string): number => {
+    const start = new Date(`1970-01-01T${startTime}:00`);
+    const end = new Date(`1970-01-01T${endTime}:00`);
+    return Math.round((end.getTime() - start.getTime()) / (1000 * 60)); // minutes
   };
 
   // シフト詳細モーダル
@@ -626,6 +649,7 @@ export default function ManagerCalendarPage() {
               layoutMode={layoutMode}
               shifts={shifts}
               staff={staff}
+              shiftRequests={shiftRequests}
               getDayStats={getDayStats}
               getStaffShiftsForDate={getStaffShiftsForDate}
               getShiftsForDate={getShiftsForDate}
@@ -667,9 +691,9 @@ export default function ManagerCalendarPage() {
             shift={selectedShift}
             staff={staff}
             onClose={handleCloseDetailModal}
-            onUpdate={async () => {
-              const newShifts = await shiftService.getShiftsByShop(managerUser.uid);
-              setShifts(newShifts);
+            onUpdate={() => {
+              // リアルタイムリスナーがデータを自動更新するので手動取得は不要
+              console.log('📅 Shift updated - real-time listener will handle data refresh');
             }}
           />
         )}

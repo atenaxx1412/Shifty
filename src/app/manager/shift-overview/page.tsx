@@ -50,6 +50,13 @@ export default function ShiftOverviewPage() {
         ManagerDataService.getOptimizedDashboardData(currentUser.uid)
       ]);
 
+      // デバッグ情報を追加
+      console.log('🔍 Debug - Selected month:', selectedMonth);
+      console.log('🔍 Debug - Overview data:', overviewData);
+      console.log('🔍 Debug - Total shifts calculation:', overviewData.totalShifts);
+      console.log('🔍 Debug - Filled shifts:', overviewData.filledShifts);
+      console.log('🔍 Debug - Empty shifts:', overviewData.emptyShifts);
+
       setShiftData(overviewData);
       setMonthlyBudget(dashboardData.monthlyBudget);
 
@@ -65,6 +72,12 @@ export default function ShiftOverviewPage() {
 
   const refreshData = async () => {
     setRefreshing(true);
+
+    // キャッシュをクリアして最新データを取得
+    console.log('🧹 Clearing cache before refresh');
+    ManagerDataService.invalidateCache('shiftOverview', currentUser?.uid || '', selectedMonth);
+    ManagerDataService.invalidateCache('dashboard', currentUser?.uid || '');
+
     await loadShiftData();
     setRefreshing(false);
   };
@@ -238,9 +251,9 @@ export default function ShiftOverviewPage() {
                         <tr className="border-b border-gray-200">
                           <th className="text-left py-3 px-4 font-medium text-gray-500">週</th>
                           <th className="text-left py-3 px-4 font-medium text-gray-500">期間</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-500">総枠数</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-500">割当済み</th>
-                          <th className="text-left py-3 px-4 font-medium text-gray-500">充足率</th>
+                          <th className="text-left py-3 px-4 font-medium text-gray-500">シフト数</th>
+                          <th className="text-left py-3 px-4 font-medium text-gray-500">合計時間</th>
+                          <th className="text-left py-3 px-4 font-medium text-gray-500">人件費</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -251,18 +264,10 @@ export default function ShiftOverviewPage() {
                               {new Date(week.startDate).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })} -
                               {new Date(week.endDate).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                             </td>
-                            <td className="py-3 px-4">{week.totalSlots}</td>
-                            <td className="py-3 px-4">{week.filledSlots}</td>
-                            <td className="py-3 px-4">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                week.fillRate >= 80
-                                  ? 'bg-green-100 text-green-800'
-                                  : week.fillRate >= 60
-                                  ? 'bg-yellow-100 text-yellow-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}>
-                                {week.fillRate.toFixed(1)}%
-                              </span>
+                            <td className="py-3 px-4 font-medium">{week.shiftCount}日</td>
+                            <td className="py-3 px-4 font-medium">{week.totalHours}時間</td>
+                            <td className="py-3 px-4 font-medium text-teal-600">
+                              ¥{week.laborCost.toLocaleString()}
                             </td>
                           </tr>
                         ))}

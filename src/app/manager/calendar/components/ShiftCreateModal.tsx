@@ -6,20 +6,12 @@ import { CalendarViewType } from "@/types/calendar";
 import { StaffingTemplateIntegration } from "@/lib/staffingTemplateIntegration";
 import { Info, AlertTriangle, Users } from "lucide-react";
 
-interface StaffTimeSettings {
-  [staffId: string]: {
-    startTime: string;
-    endTime: string;
-    positions: string;
-    notes: string;
-  };
-}
-
 interface FormData {
   startTime: string;
   endTime: string;
   positions: string;
   notes: string;
+  requiredStaff: string;
 }
 
 interface ShiftCreateModalProps {
@@ -28,14 +20,10 @@ interface ShiftCreateModalProps {
   createModalStaff: User | null;
   calendarView: CalendarViewType;
   staff: User[];
-  selectedStaffForCalendar: string[];
-  setSelectedStaffForCalendar: (fn: (prev: string[]) => string[]) => void;
-  staffTimeSettings: StaffTimeSettings;
-  handleStaffTimeChange: (staffId: string, field: string, value: string) => void;
   formData: FormData;
   handleFormChange: (field: string, value: string) => void;
   createLoading: boolean;
-  managerId: string; // Added for template integration
+  managerId: string;
   onClose: () => void;
   onSubmit: () => void;
 }
@@ -46,10 +34,6 @@ export default function ShiftCreateModal({
   createModalStaff,
   calendarView,
   staff,
-  selectedStaffForCalendar,
-  setSelectedStaffForCalendar,
-  staffTimeSettings,
-  handleStaffTimeChange,
   formData,
   handleFormChange,
   createLoading,
@@ -61,7 +45,7 @@ export default function ShiftCreateModal({
 
   // Get template shortage information
   const dateString = format(createModalDate, "yyyy-MM-dd");
-  const currentStaffCount = createModalStaff ? 1 : selectedStaffForCalendar.length;
+  const currentStaffCount = createModalStaff ? 1 : parseInt(formData.requiredStaff || "2");
   const shortageInfo = StaffingTemplateIntegration.getDateShortageInfo(
     managerId,
     dateString,
@@ -139,59 +123,30 @@ export default function ShiftCreateModal({
               />
             </div>
 
-            {/* Staff Selection - Available when no specific staff is selected */}
+            {/* Required Staff Count - Auto-assignment system */}
             {!createModalStaff && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  スタッフ選択
+                  必要スタッフ数
                 </label>
-                <div className="border border-gray-200 rounded-xl p-3 max-h-48 overflow-y-auto bg-white/50">
-                  {staff.length > 0 ? (
-                    <div className="space-y-2">
-                      {staff.map((staffMember) => (
-                        <div
-                          key={staffMember.uid}
-                          className="flex items-center p-2 hover:bg-gray-50 rounded-lg"
-                        >
-                          <input
-                            type="checkbox"
-                            id={`staff-${staffMember.uid}`}
-                            value={staffMember.uid}
-                            checked={selectedStaffForCalendar.includes(staffMember.uid)}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              const isChecked = e.target.checked;
-                              setSelectedStaffForCalendar((prev) => {
-                                if (isChecked) {
-                                  return [...prev, staffMember.uid];
-                                } else {
-                                  return prev.filter((id) => id !== staffMember.uid);
-                                }
-                              });
-                            }}
-                            className="h-4 w-4 accent-red-500 text-red-600 border-gray-300 rounded checked:bg-red-500 checked:border-red-500 focus:ring-red-500 focus:border-red-500 cursor-pointer"
-                          />
-                          <label
-                            htmlFor={`staff-${staffMember.uid}`}
-                            className="ml-3 flex-1 cursor-pointer"
-                          >
-                            <div className="text-sm font-medium text-gray-900">
-                              {staffMember.name}
-                            </div>
-                            {staffMember.skills && staffMember.skills.length > 0 && (
-                              <div className="text-xs text-gray-500">
-                                {staffMember.skills.slice(0, 2).join(", ")}
-                              </div>
-                            )}
-                          </label>
-                        </div>
-                      ))}
+                <div className="border border-gray-200 rounded-xl p-3 bg-white/50">
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={formData.requiredStaff || "2"}
+                    onChange={(e) => handleFormChange('requiredStaff', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="必要なスタッフ数を入力"
+                  />
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center space-x-2 text-blue-700">
+                      <Users className="h-4 w-4 flex-shrink-0" />
+                      <p className="text-xs">
+                        システムが自動的にスキルと可用性を考慮して最適なスタッフを割り当てます
+                      </p>
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-500 text-center py-4">
-                      スタッフが登録されていません
-                    </p>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
@@ -228,12 +183,12 @@ export default function ShiftCreateModal({
                         : 'text-blue-900'
                     }`}>
                       {shortageInfo.isCritical
-                        ? '🚨 重要: 深刻な人数不足'
+                        ? '重要: 深刻な人数不足'
                         : shortageInfo.isWarning
-                        ? '⚠️ 注意: 人数不足の可能性'
+                        ? '注意: 人数不足の可能性'
                         : shortageInfo.shortage === 0
-                        ? '✅ 人数設定OK'
-                        : '📋 人員テンプレート情報'}
+                        ? '人数設定OK'
+                        : '人員テンプレート情報'}
                     </h4>
                     <div className={`space-y-2 text-sm ${
                       shortageInfo.isCritical
@@ -268,7 +223,7 @@ export default function ShiftCreateModal({
                         </div>
                       ) : (
                         <div className="mt-3 p-3 rounded-lg font-medium text-center bg-green-100 text-green-900">
-                          ✅ 必要人数に達しています
+                          必要人数に達しています
                         </div>
                       )}
                     </div>
@@ -294,114 +249,8 @@ export default function ShiftCreateModal({
               </div>
             )}
 
-            {/* Individual Staff Time Settings */}
-            {!createModalStaff && selectedStaffForCalendar.length > 0 ? (
-              <div className="space-y-4">
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                  <div className="flex items-center space-x-2 text-blue-700">
-                    <svg
-                      className="h-4 w-4 flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <p className="text-sm font-medium">
-                      各スタッフごとに個別の時間設定が可能です
-                    </p>
-                  </div>
-                </div>
-
-                {selectedStaffForCalendar.map((staffId) => {
-                  const staffMember = staff.find((s) => s.uid === staffId);
-                  const staffSetting = staffTimeSettings[staffId] || {
-                    startTime: "09:00",
-                    endTime: "17:00",
-                    positions: "",
-                    notes: "",
-                  };
-
-                  return (
-                    <div
-                      key={staffId}
-                      className="border border-gray-200 rounded-xl p-4 bg-gray-50"
-                    >
-                      <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                        <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                        {staffMember?.name || "スタッフ"}さんの設定
-                      </h4>
-
-                      <div className="grid grid-cols-2 gap-3 mb-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            開始時間
-                          </label>
-                          <input
-                            type="time"
-                            value={staffSetting.startTime}
-                            onChange={(e) =>
-                              handleStaffTimeChange(staffId, "startTime", e.target.value)
-                            }
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
-                            終了時間
-                          </label>
-                          <input
-                            type="time"
-                            value={staffSetting.endTime}
-                            onChange={(e) =>
-                              handleStaffTimeChange(staffId, "endTime", e.target.value)
-                            }
-                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          ポジション
-                        </label>
-                        <input
-                          type="text"
-                          value={staffSetting.positions}
-                          onChange={(e) =>
-                            handleStaffTimeChange(staffId, "positions", e.target.value)
-                          }
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                          placeholder="レジ、フロア、キッチンなど（カンマ区切り）"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          備考
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={staffSetting.notes}
-                          onChange={(e) =>
-                            handleStaffTimeChange(staffId, "notes", e.target.value)
-                          }
-                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all duration-200"
-                          placeholder="特別な指示があれば入力"
-                        ></textarea>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* Single Time Settings UI */
-              <div className="space-y-4">
+            {/* Time Settings UI */}
+            <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -452,8 +301,7 @@ export default function ShiftCreateModal({
                     placeholder="特別な指示があれば入力"
                   ></textarea>
                 </div>
-              </div>
-            )}
+            </div>
 
             {/* Footer Button */}
             <div className="flex justify-end pt-4">
@@ -463,28 +311,12 @@ export default function ShiftCreateModal({
                 className="px-6 py-3 text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {createLoading
-                  ? (() => {
-                      if (createModalStaff) {
-                        return `${createModalStaff.name}さんに設定中...`;
-                      } else if (
-                        !createModalStaff &&
-                        selectedStaffForCalendar.length > 0
-                      ) {
-                        return `${selectedStaffForCalendar.length}名に設定中...`;
-                      }
-                      return "作成中...";
-                    })()
-                  : (() => {
-                      if (createModalStaff) {
-                        return `${createModalStaff.name}さんのシフト設定`;
-                      } else if (
-                        !createModalStaff &&
-                        selectedStaffForCalendar.length > 0
-                      ) {
-                        return `${selectedStaffForCalendar.length}名のシフト設定`;
-                      }
-                      return "作成";
-                    })()}
+                  ? (createModalStaff
+                      ? `${createModalStaff.name}さんに設定中...`
+                      : `シフト作成中...`)
+                  : (createModalStaff
+                      ? `${createModalStaff.name}さんのシフト設定`
+                      : `シフト作成（${formData.requiredStaff || 2}名自動割り当て）`)}
               </button>
             </div>
           </div>

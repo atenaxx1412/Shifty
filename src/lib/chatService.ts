@@ -67,7 +67,7 @@ class ChatService {
       participantNames,
       participantRoles,
       title: title || this.generateRoomTitle(roomType, participants),
-      relatedShiftId,
+      ...(relatedShiftId && { relatedShiftId }), // 条件付きで追加
       unreadCount,
       isActive: true,
       createdBy: createdBy.uid,
@@ -75,13 +75,22 @@ class ChatService {
       updatedAt: now,
     };
 
-    // Firestore に保存
+    // Firestore に保存 (undefined値を除外)
     const roomRef = doc(db, this.CHAT_ROOMS_COLLECTION, chatRoomId);
-    await setDoc(roomRef, {
+    const roomData = {
       ...chatRoom,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+    };
+
+    // undefined値を除外
+    Object.keys(roomData).forEach(key => {
+      if (roomData[key] === undefined) {
+        delete roomData[key];
+      }
     });
+
+    await setDoc(roomRef, roomData);
 
     // システムメッセージを送信
     await this.sendSystemMessage(
@@ -109,27 +118,181 @@ class ChatService {
     user2: User,
     relatedShiftId?: string
   ): Promise<ChatRoom> {
-    // 既存の直接チャットを検索
-    const existingRoom = await this.findExistingDirectChat(shopId, user1.uid, user2.uid);
-    
-    if (existingRoom) {
-      // シフト関連の場合、関連シフトIDを更新
-      if (relatedShiftId && !existingRoom.relatedShiftId) {
-        await this.updateChatRoomShift(existingRoom.chatRoomId, relatedShiftId);
-        existingRoom.relatedShiftId = relatedShiftId;
-      }
-      return existingRoom;
-    }
+    try {
+      console.log('🚀 ChatService: getOrCreateDirectChat started', {
+        shopId,
+        user1: user1.name,
+        user2: user2.name,
+        relatedShiftId
+      });
 
-    // 新しい直接チャットを作成
-    return await this.createChatRoom(
-      shopId,
-      user1,
-      [user2],
-      'direct',
-      undefined,
-      relatedShiftId
-    );
+      // 既存の直接チャットを検索
+      const existingRoom = await this.findExistingDirectChat(shopId, user1.uid, user2.uid);
+
+      if (existingRoom) {
+        console.log('✅ ChatService: Found existing room, returning it');
+        // シフト関連の場合、関連シフトIDを更新
+        if (relatedShiftId && !existingRoom.relatedShiftId) {
+          await this.updateChatRoomShift(existingRoom.chatRoomId, relatedShiftId);
+          existingRoom.relatedShiftId = relatedShiftId;
+        }
+        return existingRoom;
+      }
+
+      console.log('🛠️ ChatService: No existing room found, creating new one');
+      // 新しい直接チャットを作成
+      const newRoom = await this.createChatRoom(
+        shopId,
+        user1,
+        [user2],
+        'direct',
+        undefined,
+        relatedShiftId
+      );
+      console.log('✅ ChatService: New room created successfully:', newRoom.chatRoomId);
+      return newRoom;
+    } catch (error) {
+      console.error('❌ ChatService: Error in getOrCreateDirectChat:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * スタッフ-マネージャー専用チャットルームを取得/作成
+   * 1スタッフにつき1つのルームを保証
+   */
+  async getOrCreateStaffManagerRoom(
+    roomId: string,
+    staff: User,
+    manager: User
+  ): Promise<ChatRoom> {
+    try {
+      console.log('🔍 ChatService: Getting/Creating staff-manager room:', roomId);
+
+      // 指定されたIDでルームを直接取得を試行
+      const roomRef = doc(db, this.CHAT_ROOMS_COLLECTION, roomId);
+
+      let roomExists = false;
+      let existingRoomData = null;
+
+      try {
+        console.log('📖 ChatService: Checking if room exists');
+        const roomSnap = await getDoc(roomRef);
+
+        if (roomSnap.exists()) {
+          console.log('✅ ChatService: Found existing room:', roomId);
+          roomExists = true;
+          existingRoomData = roomSnap.data();
+        } else {
+          console.log('📝 ChatService: Room does not exist, will create new one');
+        }
+      } catch (getDocError) {
+        console.log('⚠️ ChatService: Error checking room existence (probably offline):', getDocError);
+        // If offline, we'll try to create the room anyway
+        // The setDoc operation might succeed even if getDoc fails
+      }
+
+      if (roomExists && existingRoomData) {
+        return {
+          chatRoomId: existingRoomData.chatRoomId,
+          shopId: existingRoomData.shopId,
+          roomType: existingRoomData.roomType,
+          participants: existingRoomData.participants,
+          participantNames: existingRoomData.participantNames,
+          participantRoles: existingRoomData.participantRoles,
+          title: existingRoomData.title,
+          description: existingRoomData.description,
+          ...(existingRoomData.relatedShiftId && { relatedShiftId: existingRoomData.relatedShiftId }),
+          lastMessage: existingRoomData.lastMessage,
+          lastMessageTime: existingRoomData.lastMessageTime?.toDate?.() || null,
+          lastMessageSender: existingRoomData.lastMessageSender,
+          unreadCount: existingRoomData.unreadCount || {},
+          isActive: existingRoomData.isActive,
+          createdBy: existingRoomData.createdBy,
+          createdAt: existingRoomData.createdAt?.toDate?.() || new Date(),
+          updatedAt: existingRoomData.updatedAt?.toDate?.() || new Date(),
+        } as ChatRoom;
+      }
+
+      console.log('🛠️ ChatService: Creating new room:', roomId);
+      // ルームが存在しない場合は作成
+      const now = new Date();
+      const participantNames: Record<string, string> = {
+        [staff.uid]: staff.name,
+        [manager.uid]: manager.name
+      };
+      const participantRoles: Record<string, UserRole> = {
+        [staff.uid]: staff.role,
+        [manager.uid]: manager.role
+      };
+      const unreadCount: Record<string, number> = {
+        [staff.uid]: 0,
+        [manager.uid]: 0
+      };
+
+      const chatRoom: ChatRoom = {
+        chatRoomId: roomId,
+        shopId: manager.uid, // Use manager's ID as shopId
+        roomType: 'direct',
+        participants: [staff.uid, manager.uid],
+        participantNames,
+        participantRoles,
+        title: `${staff.name} と ${manager.name}`,
+        unreadCount,
+        isActive: true,
+        createdBy: staff.uid,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Firestore に保存 (undefined値を除外)
+      const roomData = {
+        ...chatRoom,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // undefined値を除外
+      Object.keys(roomData).forEach(key => {
+        if (roomData[key] === undefined) {
+          delete roomData[key];
+        }
+      });
+
+      try {
+        await setDoc(roomRef, roomData);
+        console.log('✅ ChatService: Room document created successfully');
+
+        // システムメッセージを送信 (オフラインの場合は失敗してもOK)
+        try {
+          await this.sendSystemMessage(
+            roomId,
+            `${staff.name}さんと${manager.name}さんの会話が開始されました`,
+            staff
+          );
+          console.log('✅ ChatService: System message sent');
+        } catch (systemMessageError) {
+          console.log('⚠️ ChatService: System message failed (probably offline):', systemMessageError);
+          // システムメッセージの失敗は無視して続行
+        }
+
+        console.log('✅ ChatService: New room created:', roomId);
+        return chatRoom;
+      } catch (setDocError) {
+        console.error('❌ ChatService: Failed to create room document:', setDocError);
+
+        // オフラインエラーの場合でも、メモリ内のオブジェクトを返す
+        if (setDocError.code === 'unavailable' || setDocError.message.includes('offline')) {
+          console.log('📱 ChatService: Returning offline room object');
+          return chatRoom;
+        } else {
+          throw setDocError;
+        }
+      }
+    } catch (error) {
+      console.error('❌ ChatService: Error in getOrCreateStaffManagerRoom:', error);
+      throw error;
+    }
   }
 
   /**
@@ -143,48 +306,74 @@ class ChatService {
     relatedShiftId?: string,
     relatedData?: Record<string, any>
   ): Promise<ChatMessage> {
-    const now = new Date();
-    const messageId = `${chatRoomId}_${sender.uid}_${now.getTime()}`;
+    try {
+      console.log('📨 ChatService: sendMessage called', {
+        chatRoomId,
+        sender: sender.name,
+        messageLength: message.length,
+        messageType
+      });
 
-    const chatMessage: ChatMessage = {
-      messageId,
-      chatRoomId,
-      senderId: sender.uid,
-      senderName: sender.name,
-      senderRole: sender.role,
-      message,
-      messageType,
-      relatedShiftId,
-      relatedData,
-      isRead: false,
-      readBy: [sender.uid], // 送信者は既読
-      createdAt: now,
-      updatedAt: now,
-    };
+      const now = new Date();
+      const messageId = `${chatRoomId}_${sender.uid}_${now.getTime()}`;
 
-    // Firestore にメッセージを保存
-    const messageRef = doc(db, this.CHAT_MESSAGES_COLLECTION, messageId);
-    await setDoc(messageRef, {
-      ...chatMessage,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+      const chatMessage: ChatMessage = {
+        messageId,
+        chatRoomId,
+        senderId: sender.uid,
+        senderName: sender.name,
+        senderRole: sender.role,
+        message,
+        messageType,
+        ...(relatedShiftId && { relatedShiftId }),
+        ...(relatedData && { relatedData }),
+        isRead: false,
+        readBy: [sender.uid], // 送信者は既読
+        createdAt: now,
+        updatedAt: now,
+      };
 
-    // チャットルームの最新メッセージ情報を更新
-    await this.updateChatRoomLastMessage(chatRoomId, message, sender.name, now, sender.uid);
+      console.log('💾 ChatService: Saving message to Firestore');
 
-    // 他の参加者に通知を送信
-    await this.sendMessageNotifications(chatRoomId, messageId, sender, message);
+      // Firestore にメッセージを保存 (undefined値を除外)
+      const messageRef = doc(db, this.CHAT_MESSAGES_COLLECTION, messageId);
+      const messageData = {
+        ...chatMessage,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
 
-    console.log('📨 Message sent:', {
-      messageId,
-      chatRoomId,
-      sender: sender.name,
-      messageType,
-      length: message.length,
-    });
+      // undefined値を除外
+      Object.keys(messageData).forEach(key => {
+        if (messageData[key] === undefined) {
+          delete messageData[key];
+        }
+      });
 
-    return chatMessage;
+      await setDoc(messageRef, messageData);
+      console.log('✅ ChatService: Message saved to Firestore');
+
+      // チャットルームの最新メッセージ情報を更新
+      console.log('🔄 ChatService: Updating chat room last message');
+      await this.updateChatRoomLastMessage(chatRoomId, message, sender.name, now, sender.uid);
+
+      // 他の参加者に通知を送信
+      console.log('🔔 ChatService: Sending notifications');
+      await this.sendMessageNotifications(chatRoomId, messageId, sender, message);
+
+      console.log('✅ ChatService: Message sent successfully:', {
+        messageId,
+        chatRoomId,
+        sender: sender.name,
+        messageType,
+        length: message.length,
+      });
+
+      return chatMessage;
+    } catch (error) {
+      console.error('❌ ChatService: Error in sendMessage:', error);
+      throw error;
+    }
   }
 
   /**
@@ -238,10 +427,10 @@ class ChatService {
   ): Promise<ChatMessage[]> {
     const messagesRef = collection(db, this.CHAT_MESSAGES_COLLECTION);
     
+    // Temporarily remove orderBy to avoid index requirement
     let q = query(
       messagesRef,
       where('chatRoomId', '==', chatRoomId),
-      orderBy('createdAt', 'desc'),
       limit(limitCount)
     );
 
@@ -261,10 +450,10 @@ class ChatService {
         relatedData: data.relatedData,
         isRead: data.isRead,
         readBy: data.readBy || [],
-        createdAt: data.createdAt.toDate(),
-        updatedAt: data.updatedAt.toDate(),
+        createdAt: data.createdAt?.toDate?.() || new Date(),
+        updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as ChatMessage;
-    }).reverse(); // 時系列順に並べ替え
+    }).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()); // Client-side sorting by createdAt
   }
 
   /**
@@ -277,8 +466,7 @@ class ChatService {
       roomsRef,
       where('shopId', '==', shopId),
       where('participants', 'array-contains', userId),
-      where('isActive', '==', true),
-      orderBy('updatedAt', 'desc')
+      where('isActive', '==', true)
     );
 
     const querySnapshot = await getDocs(q);
@@ -296,13 +484,13 @@ class ChatService {
         description: data.description,
         relatedShiftId: data.relatedShiftId,
         lastMessage: data.lastMessage,
-        lastMessageTime: data.lastMessageTime?.toDate(),
+        lastMessageTime: data.lastMessageTime?.toDate?.() || null,
         lastMessageSender: data.lastMessageSender,
         unreadCount: data.unreadCount || {},
         isActive: data.isActive,
         createdBy: data.createdBy,
-        createdAt: data.createdAt.toDate(),
-        updatedAt: data.updatedAt.toDate(),
+        createdAt: data.createdAt?.toDate?.() || new Date(),
+        updatedAt: data.updatedAt?.toDate?.() || new Date(),
       } as ChatRoom;
     });
   }
@@ -314,37 +502,58 @@ class ChatService {
     chatRoomId: string,
     callback: (messages: ChatMessage[]) => void
   ): () => void {
+    console.log('🔄 ChatService: subscribeToMessages called for room:', chatRoomId);
+
     const messagesRef = collection(db, this.CHAT_MESSAGES_COLLECTION);
-    
+
+    // Temporarily remove orderBy to avoid index requirement
     const q = query(
       messagesRef,
       where('chatRoomId', '==', chatRoomId),
-      orderBy('createdAt', 'desc'),
       limit(50)
     );
 
-    return onSnapshot(q, (snapshot) => {
-      const messages = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          messageId: data.messageId,
-          chatRoomId: data.chatRoomId,
-          senderId: data.senderId,
-          senderName: data.senderName,
-          senderRole: data.senderRole,
-          message: data.message,
-          messageType: data.messageType,
-          relatedShiftId: data.relatedShiftId,
-          relatedData: data.relatedData,
-          isRead: data.isRead,
-          readBy: data.readBy || [],
-          createdAt: data.createdAt.toDate(),
-          updatedAt: data.updatedAt.toDate(),
-        } as ChatMessage;
-      }).reverse();
+    return onSnapshot(q,
+      (snapshot) => {
+        console.log('📡 ChatService: Message subscription callback fired');
+        console.log('📡 ChatService: Snapshot docs count:', snapshot.docs.length);
+        console.log('📡 ChatService: Query chatRoomId:', chatRoomId);
 
-      callback(messages);
-    });
+        const messages = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('📄 ChatService: Processing message doc:', {
+            messageId: data.messageId,
+            chatRoomId: data.chatRoomId,
+            senderName: data.senderName,
+            message: data.message,
+            createdAt: data.createdAt
+          });
+
+          return {
+            messageId: data.messageId,
+            chatRoomId: data.chatRoomId,
+            senderId: data.senderId,
+            senderName: data.senderName,
+            senderRole: data.senderRole,
+            message: data.message,
+            messageType: data.messageType,
+            relatedShiftId: data.relatedShiftId,
+            relatedData: data.relatedData,
+            isRead: data.isRead,
+            readBy: data.readBy || [],
+            createdAt: data.createdAt?.toDate?.() || new Date(),
+            updatedAt: data.updatedAt?.toDate?.() || new Date(),
+          } as ChatMessage;
+        }).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()); // Client-side sorting by createdAt
+
+        console.log('📨 ChatService: Processed messages:', messages.length);
+        callback(messages);
+      },
+      (error) => {
+        console.error('❌ ChatService: subscribeToMessages error:', error);
+        callback([]); // Empty array on error
+      }
+    );
   }
 
   /**
@@ -361,36 +570,47 @@ class ChatService {
       roomsRef,
       where('shopId', '==', shopId),
       where('participants', 'array-contains', userId),
-      where('isActive', '==', true),
-      orderBy('updatedAt', 'desc')
+      where('isActive', '==', true)
     );
 
-    return onSnapshot(q, (snapshot) => {
-      const rooms = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          chatRoomId: data.chatRoomId,
-          shopId: data.shopId,
-          roomType: data.roomType,
-          participants: data.participants,
-          participantNames: data.participantNames,
-          participantRoles: data.participantRoles,
-          title: data.title,
-          description: data.description,
-          relatedShiftId: data.relatedShiftId,
-          lastMessage: data.lastMessage,
-          lastMessageTime: data.lastMessageTime?.toDate(),
-          lastMessageSender: data.lastMessageSender,
-          unreadCount: data.unreadCount || {},
-          isActive: data.isActive,
-          createdBy: data.createdBy,
-          createdAt: data.createdAt.toDate(),
-          updatedAt: data.updatedAt.toDate(),
-        } as ChatRoom;
-      });
+    return onSnapshot(q,
+      (snapshot) => {
+        console.log('📡 ChatService: subscribeToChatRooms callback - snapshot received');
+        console.log('📡 ChatService: Snapshot docs count:', snapshot.docs.length);
+        console.log('📡 ChatService: Query params - shopId:', shopId, 'userId:', userId);
 
-      callback(rooms);
-    });
+        const rooms = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            chatRoomId: data.chatRoomId,
+            shopId: data.shopId,
+            roomType: data.roomType,
+            participants: data.participants,
+            participantNames: data.participantNames,
+            participantRoles: data.participantRoles,
+            title: data.title,
+            description: data.description,
+            relatedShiftId: data.relatedShiftId,
+            lastMessage: data.lastMessage,
+            lastMessageTime: data.lastMessageTime?.toDate?.() || null,
+            lastMessageSender: data.lastMessageSender,
+            unreadCount: data.unreadCount || {},
+            isActive: data.isActive,
+            createdBy: data.createdBy,
+            createdAt: data.createdAt?.toDate?.() || new Date(),
+            updatedAt: data.updatedAt?.toDate?.() || new Date(),
+          } as ChatRoom;
+        });
+
+        console.log('📡 ChatService: Mapped rooms count:', rooms.length);
+        callback(rooms);
+      },
+      (error) => {
+        console.error('❌ ChatService: subscribeToChatRooms error:', error);
+        // Still call callback with empty array to prevent infinite loading
+        callback([]);
+      }
+    );
   }
 
   /**
@@ -429,44 +649,66 @@ class ChatService {
     user1Id: string,
     user2Id: string
   ): Promise<ChatRoom | null> {
+    console.log('🔍 ChatService: Finding existing direct chat', { shopId, user1Id, user2Id });
+
     const roomsRef = collection(db, this.CHAT_ROOMS_COLLECTION);
-    
+
+    // Simplified query to avoid composite index issues
     const q = query(
       roomsRef,
       where('shopId', '==', shopId),
-      where('roomType', '==', 'direct'),
-      where('participants', 'array-contains', user1Id),
-      where('isActive', '==', true)
+      where('participants', 'array-contains', user1Id)
     );
 
-    const querySnapshot = await getDocs(q);
-    
-    for (const doc of querySnapshot.docs) {
-      const data = doc.data();
-      if (data.participants.includes(user2Id) && data.participants.length === 2) {
-        return {
+    try {
+      const querySnapshot = await getDocs(q);
+      console.log('🔍 ChatService: Found rooms:', querySnapshot.docs.length);
+
+      for (const doc of querySnapshot.docs) {
+        const data = doc.data();
+        console.log('🔍 ChatService: Checking room:', {
           chatRoomId: data.chatRoomId,
-          shopId: data.shopId,
           roomType: data.roomType,
           participants: data.participants,
-          participantNames: data.participantNames,
-          participantRoles: data.participantRoles,
-          title: data.title,
-          description: data.description,
-          relatedShiftId: data.relatedShiftId,
-          lastMessage: data.lastMessage,
-          lastMessageTime: data.lastMessageTime?.toDate(),
-          lastMessageSender: data.lastMessageSender,
-          unreadCount: data.unreadCount || {},
-          isActive: data.isActive,
-          createdBy: data.createdBy,
-          createdAt: data.createdAt.toDate(),
-          updatedAt: data.updatedAt.toDate(),
-        } as ChatRoom;
-      }
-    }
+          isActive: data.isActive
+        });
 
-    return null;
+        // Filter in JavaScript to avoid composite index
+        if (
+          data.roomType === 'direct' &&
+          data.isActive === true &&
+          data.participants.includes(user2Id) &&
+          data.participants.length === 2
+        ) {
+          console.log('✅ ChatService: Found existing direct chat:', data.chatRoomId);
+          return {
+            chatRoomId: data.chatRoomId,
+            shopId: data.shopId,
+            roomType: data.roomType,
+            participants: data.participants,
+            participantNames: data.participantNames,
+            participantRoles: data.participantRoles,
+            title: data.title,
+            description: data.description,
+            relatedShiftId: data.relatedShiftId,
+            lastMessage: data.lastMessage,
+            lastMessageTime: data.lastMessageTime?.toDate?.() || null,
+            lastMessageSender: data.lastMessageSender,
+            unreadCount: data.unreadCount || {},
+            isActive: data.isActive,
+            createdBy: data.createdBy,
+            createdAt: data.createdAt?.toDate?.() || new Date(),
+            updatedAt: data.updatedAt?.toDate?.() || new Date(),
+          } as ChatRoom;
+        }
+      }
+
+      console.log('🔍 ChatService: No existing direct chat found');
+      return null;
+    } catch (error) {
+      console.error('❌ ChatService: Error finding existing direct chat:', error);
+      return null;
+    }
   }
 
   /**
@@ -497,31 +739,47 @@ class ChatService {
     timestamp: Date,
     senderId: string
   ): Promise<void> {
-    const roomRef = doc(db, this.CHAT_ROOMS_COLLECTION, chatRoomId);
-    
-    // 他の参加者の未読数を増加
-    const roomSnap = await getDoc(roomRef);
-    if (!roomSnap.exists()) return;
+    try {
+      console.log('🔄 ChatService: updateChatRoomLastMessage called', { chatRoomId, senderName });
 
-    const roomData = roomSnap.data();
-    const participants = roomData.participants || [];
-    const currentUnreadCount = roomData.unreadCount || {};
+      const roomRef = doc(db, this.CHAT_ROOMS_COLLECTION, chatRoomId);
 
-    // 送信者以外の未読数を増加
-    const updatedUnreadCount = { ...currentUnreadCount };
-    participants.forEach((participantId: string) => {
-      if (participantId !== senderId) {
-        updatedUnreadCount[participantId] = (updatedUnreadCount[participantId] || 0) + 1;
+      console.log('📖 ChatService: Getting room document');
+      // 他の参加者の未読数を増加
+      const roomSnap = await getDoc(roomRef);
+      if (!roomSnap.exists()) {
+        console.log('❌ ChatService: Room not found:', chatRoomId);
+        return;
       }
-    });
 
-    await updateDoc(roomRef, {
-      lastMessage: message.length > 50 ? message.substring(0, 47) + '...' : message,
-      lastMessageTime: Timestamp.fromDate(timestamp),
-      lastMessageSender: senderName,
-      unreadCount: updatedUnreadCount,
-      updatedAt: serverTimestamp(),
-    });
+      console.log('✅ ChatService: Room found, updating unread counts');
+      const roomData = roomSnap.data();
+      const participants = roomData.participants || [];
+      const currentUnreadCount = roomData.unreadCount || {};
+
+      // 送信者以外の未読数を増加
+      const updatedUnreadCount = { ...currentUnreadCount };
+      participants.forEach((participantId: string) => {
+        if (participantId !== senderId) {
+          updatedUnreadCount[participantId] = (updatedUnreadCount[participantId] || 0) + 1;
+        }
+      });
+
+      console.log('💾 ChatService: Updating room document with last message');
+
+      await updateDoc(roomRef, {
+        lastMessage: message.length > 50 ? message.substring(0, 47) + '...' : message,
+        lastMessageTime: Timestamp.fromDate(timestamp),
+        lastMessageSender: senderName,
+        unreadCount: updatedUnreadCount,
+        updatedAt: serverTimestamp(),
+      });
+
+      console.log('✅ ChatService: Room last message updated successfully');
+    } catch (error) {
+      console.error('❌ ChatService: Error updating room last message:', error);
+      throw error;
+    }
   }
 
   /**
