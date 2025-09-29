@@ -5,6 +5,7 @@ import { ja } from "date-fns/locale";
 import { User } from "@/types/auth";
 import { ShiftExtended, ShiftSlot } from "@/types/calendar";
 import { MonthlyShiftRequest, DayShiftRequest } from "@/types";
+import { ManagerSlot } from "@/lib/slotManagementService";
 import { Plus, Edit, MessageCircle, AlertTriangle, CheckCircle, Star, ThumbsUp, X } from "lucide-react";
 import { useState } from "react";
 
@@ -50,6 +51,11 @@ interface CalendarGridProps {
   getDayStats: (date: Date) => DayStats;
   getStaffShiftsForDate: (date: Date) => Map<string, Array<{ shift: ShiftExtended; slot: ShiftSlot; }>>;
   getShiftsForDate: (date: Date) => ShiftExtended[];
+  // 枠数管理用props
+  managerSlots: ManagerSlot | null;
+  onAddStaff: () => void;
+  onEditStaff: (staff: User) => void;
+  onDeleteStaff: (staff: User) => void;
 }
 
 interface CellSizes {
@@ -74,7 +80,11 @@ export default function CalendarGrid({
   onOpenStaffChat,
   getDayStats,
   getStaffShiftsForDate,
-  getShiftsForDate
+  getShiftsForDate,
+  managerSlots,
+  onAddStaff,
+  onEditStaff,
+  onDeleteStaff
 }: CalendarGridProps) {
 
   // 警告ダイアログの状態管理
@@ -494,46 +504,89 @@ export default function CalendarGrid({
           <div className="flex-shrink-0 w-48 bg-gray-50 border-r border-gray-300">
             {/* Header */}
             <div
-              className={`${cellSizes.cellHeight} ${cellSizes.padding} font-medium text-gray-900 border-b border-gray-300 flex items-center box-border`}
+              className={`${cellSizes.cellHeight} ${cellSizes.padding} font-medium text-gray-900 border-b border-gray-300 flex items-center justify-center box-border`}
             >
               <span>スタッフ</span>
             </div>
 
-            {/* Staff Rows */}
-            {staff.map((staffMember, staffIndex) => (
-              <div
-                key={staffMember.uid}
-                className={`${cellSizes.cellHeight} ${
-                  cellSizes.padding
-                } flex items-center box-border ${
-                  staffIndex < staff.length - 1
-                    ? "border-b border-gray-300"
-                    : ""
-                }`}
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div>
-                    <div className="font-medium text-gray-900">
-                      {staffMember.name}
+            {/* Slot-based Staff Rows */}
+            {(() => {
+              if (!managerSlots) return null;
+              
+              const slots = Array.from({ length: managerSlots.totalSlots }, (_, index) => {
+                const staffMember = staff[index];
+                return { index, staffMember };
+              });
+
+              return slots.map(({ index, staffMember }, slotIndex) => (
+                <div
+                  key={`slot-${index}`}
+                  className={`${cellSizes.cellHeight} ${
+                    cellSizes.padding
+                  } flex items-center box-border ${
+                    slotIndex < slots.length - 1
+                      ? "border-b border-gray-300"
+                      : ""
+                  }`}
+                >
+                  {staffMember ? (
+                    // 既存スタッフ
+                    <div className="flex items-center justify-between w-full">
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {staffMember.name}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {staffMember.hourlyRate && `¥${staffMember.hourlyRate}/h`}
+                          {staffMember.employmentType && ` • ${staffMember.employmentType}`}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => onEditStaff(staffMember)}
+                          className={`${
+                            calendarView === "month" ? "p-1" : "p-2"
+                          } text-gray-600 hover:bg-gray-100 rounded-lg transition-colors`}
+                          title={`${staffMember.name}さんの情報を編集`}
+                        >
+                          <Edit className={cellSizes.iconSize} />
+                        </button>
+                        <button
+                          onClick={() => onOpenStaffChat(staffMember.uid, staffMember.name)}
+                          className={`${
+                            calendarView === "month" ? "p-1" : "p-2"
+                          } text-blue-600 hover:bg-blue-100 rounded-lg transition-colors`}
+                          title={`${staffMember.name}さんとチャット`}
+                        >
+                          <MessageCircle className={cellSizes.iconSize} />
+                        </button>
+                        <button
+                          onClick={() => onDeleteStaff(staffMember)}
+                          className={`${
+                            calendarView === "month" ? "p-1" : "p-2"
+                          } text-red-600 hover:bg-red-100 rounded-lg transition-colors`}
+                          title={`${staffMember.name}さんを削除`}
+                        >
+                          <X className={cellSizes.iconSize} />
+                        </button>
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">
-                      {staffMember.skills?.slice(0, 2).join(", ")}
+                  ) : (
+                    // 空きスロット
+                    <div className="flex items-center justify-center w-full">
+                      <button
+                        onClick={onAddStaff}
+                        className="flex items-center justify-center w-full h-full border-2 border-dashed border-gray-300 rounded text-gray-400 hover:border-gray-500 hover:text-gray-600 transition-colors hover:bg-gray-50"
+                        title="新しいスタッフを追加"
+                      >
+                        <Plus className={cellSizes.iconSize} />
+                        <span className="ml-1 text-sm">スタッフ追加</span>
+                      </button>
                     </div>
-                  </div>
-                  <button
-                    onClick={() =>
-                      onOpenStaffChat(staffMember.uid, staffMember.name)
-                    }
-                    className={`${
-                      calendarView === "month" ? "p-1" : "p-2"
-                    } text-blue-600 hover:bg-blue-100 rounded-lg transition-colors`}
-                    title={`${staffMember.name}さんとチャット`}
-                  >
-                    <MessageCircle className={cellSizes.iconSize} />
-                  </button>
+                  )}
                 </div>
-              </div>
-            ))}
+              ));
+            })()}
           </div>
 
           {/* Scrollable Dates Section */}
@@ -643,16 +696,24 @@ export default function CalendarGrid({
                 })}
               </div>
 
-              {/* Staff Schedule Grid */}
+              {/* Slot-based Staff Schedule Grid */}
               <div>
-                {staff.map((staffMember, staffIndex) => (
-                  <div key={staffMember.uid} className="flex">
-                    {monthDates.map((date) => {
-                      const staffShifts = getStaffShiftsForDate(date);
-                      const myShifts = staffShifts.get(staffMember.uid) || [];
-                      const isPast = date < startOfDay(new Date());
-                      const isToday = isSameDay(date, new Date());
-                      const dayOfWeekNum = date.getDay();
+                {(() => {
+                  if (!managerSlots) return null;
+                  
+                  const slots = Array.from({ length: managerSlots.totalSlots }, (_, index) => {
+                    const staffMember = staff[index];
+                    return { index, staffMember };
+                  });
+
+                  return slots.map(({ index, staffMember }, slotIndex) => (
+                    <div key={`schedule-slot-${index}`} className="flex">
+                      {monthDates.map((date) => {
+                        const staffShifts = getStaffShiftsForDate(date);
+                        const myShifts = staffMember ? staffShifts.get(staffMember.uid) || [] : [];
+                        const isPast = date < startOfDay(new Date());
+                        const isToday = isSameDay(date, new Date());
+                        const dayOfWeekNum = date.getDay();
 
                       // セルの背景色と枠線色を決定
                       let cellBgClass = "";
@@ -683,7 +744,7 @@ export default function CalendarGrid({
                           } ${cellSizes.cellHeight} ${
                             cellSizes.padding
                           } border-r border-gray-300 flex items-center box-border ${
-                            staffIndex < staff.length - 1
+                            slotIndex < slots.length - 1
                               ? "border-b border-gray-300"
                               : ""
                           } ${cellBgClass} ${cellBorderClass}`}
@@ -721,7 +782,7 @@ export default function CalendarGrid({
                             {/* シフト希望表示 または シフト作成ボタン */}
                             {(() => {
                               const targetMonth = format(date, 'yyyy-MM');
-                              const dayRequest = getStaffRequestForDate(staffMember.uid, date, targetMonth);
+                              const dayRequest = staffMember ? getStaffRequestForDate(staffMember.uid, date, targetMonth) : null;
 
                               // シフト希望がある場合は希望情報を表示（クリック可能）
                               if (dayRequest) {
@@ -751,7 +812,7 @@ export default function CalendarGrid({
                                     className={`w-full ${
                                       calendarView === "month" ? "h-6" : "h-8"
                                     } border-2 border-dashed border-gray-300 rounded text-gray-400 hover:border-gray-500 hover:text-gray-600 transition-colors flex items-center justify-center hover:bg-gray-50`}
-                                    title={`${staffMember.name}さんのシフトを設定（直接反映）`}
+                                    title={staffMember ? `${staffMember.name}さんのシフトを設定（直接反映）` : `シフトを設定`}
                                   >
                                     <Plus className={cellSizes.iconSize} />
                                   </button>
@@ -765,7 +826,8 @@ export default function CalendarGrid({
                       );
                     })}
                   </div>
-                ))}
+                  ));
+                })()}
               </div>
             </div>
           </div>

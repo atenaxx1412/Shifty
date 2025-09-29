@@ -185,8 +185,13 @@ export default function StaffChatPage() {
     scrollToBottom();
   }, [messages]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (smooth = true) => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({
+        behavior: smooth ? 'smooth' : 'auto',
+        block: 'end'
+      });
+    }
   };
 
   const manualRefreshMessages = async () => {
@@ -316,7 +321,7 @@ export default function StaffChatPage() {
     <ProtectedRoute allowedRoles={['staff']}>
       <AppHeader />
       <DashboardLayout>
-        <div className="h-[calc(100vh-12rem)] max-h-[600px] flex flex-col bg-white rounded-lg shadow overflow-hidden">
+        <div className="h-full flex flex-col bg-white rounded-lg shadow overflow-hidden">
           {managerChatRoom ? (
               <>
                 {/* Chat Header */}
@@ -345,7 +350,7 @@ export default function StaffChatPage() {
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50" style={{ scrollBehavior: 'auto' }}>
                   {messages.map((message) => (
                     <div
                       key={message.messageId}

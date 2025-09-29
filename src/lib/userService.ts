@@ -7,6 +7,7 @@ import {
   orderBy,
   doc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
   Unsubscribe 
 } from 'firebase/firestore';
@@ -427,6 +428,38 @@ export class UserService {
       
     } catch (error) {
       console.error('❌ Error updating staff details:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * ユーザーを削除
+   */
+  async deleteUser(userId: string): Promise<void> {
+    try {
+      console.log('🗑️ Deleting user:', userId);
+      
+      // uidフィールドでドキュメントを検索
+      const q = query(
+        collection(db, 'users'),
+        where('uid', '==', userId)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        console.error('❌ User not found for deletion:', userId);
+        throw new Error('削除対象のユーザーが見つかりません');
+      }
+      
+      const userDocRef = doc(db, 'users', querySnapshot.docs[0].id);
+      
+      await deleteDoc(userDocRef);
+      
+      console.log('✅ User deleted successfully:', userId);
+      
+    } catch (error) {
+      console.error('❌ Error deleting user:', error);
       throw error;
     }
   }

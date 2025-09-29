@@ -14,7 +14,7 @@ import SimpleChatSidebar from "@/components/chat/SimpleChatSidebar";
 import ShiftDetailModal from "@/components/shifts/ShiftDetailModal";
 import { excelService } from "@/lib/excelService";
 import { userService } from "@/lib/userService";
-import { doc, setDoc, getDocs, collection } from "firebase/firestore";
+import { doc, setDoc, getDocs, collection, addDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import {
   StaffingTemplateService,
@@ -23,6 +23,7 @@ import {
 import { ManagerDataService } from "@/lib/managerDataService";
 import { shiftRequestService } from "@/lib/shiftRequestService";
 import { MonthlyShiftRequest, DayShiftRequest } from "@/types";
+import { slotManagementService, ManagerSlot } from "@/lib/slotManagementService";
 
 // 新しく作成したコンポーネントをインポート
 import {
@@ -90,6 +91,34 @@ export default function ManagerCalendarPage() {
   const [shiftRequests, setShiftRequests] = useState<MonthlyShiftRequest[]>([]);
   const [showPublishDialog, setShowPublishDialog] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  
+  // 枠数管理の状態
+  const [managerSlots, setManagerSlots] = useState<ManagerSlot | null>(null);
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
+  const [showEditStaffModal, setShowEditStaffModal] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<User | null>(null);
+  const [addStaffFormData, setAddStaffFormData] = useState({
+    name: '',
+    loginId: '',
+    password: '',
+    hourlyRate: '1000',
+    employmentType: 'part-time',
+    skills: [] as string[],
+    maxHoursPerWeek: '',
+    availability: [] as string[]
+  });
+  const [editStaffFormData, setEditStaffFormData] = useState({
+    name: '',
+    loginId: '',
+    password: '',
+    hourlyRate: '1000',
+    employmentType: 'part-time',
+    skills: [] as string[],
+    maxHoursPerWeek: '',
+    availability: [] as string[]
+  });
+  const [addStaffLoading, setAddStaffLoading] = useState(false);
+  const [editStaffLoading, setEditStaffLoading] = useState(false);
 
   // データ取得とリアルタイム購読
   useEffect(() => {
@@ -134,6 +163,10 @@ export default function ManagerCalendarPage() {
         // テンプレートデータを取得（一回だけ）
         const templatesData = await StaffingTemplateService.getManagerTemplates(managerUser.uid);
         setTemplates(templatesData);
+
+        // マネージャーの枠数情報を取得
+        const managerSlotsData = await slotManagementService.getManagerSlots(managerUser.uid);
+        setManagerSlots(managerSlotsData);
       } catch (error) {
         console.error("Error fetching data:", error);
         setLoading(false);
@@ -437,6 +470,172 @@ export default function ManagerCalendarPage() {
     setShowPublishDialog(false);
   };
 
+  // スタッフ追加関連のハンドラー
+  const handleShowAddStaffModal = () => {
+    // 枠数チェック
+    if (!managerSlots || managerSlots.availableSlots <= 0) {
+      alert('利用可能な枠がありません。ルート管理者にお問い合わせください。');
+      return;
+    }
+    setShowAddStaffModal(true);
+  };
+
+  const handleCloseAddStaffModal = () => {
+    setShowAddStaffModal(false);
+    setAddStaffFormData({
+      name: '',
+      loginId: '',
+      password: '',
+      hourlyRate: '1000',
+      employmentType: 'part-time',
+      skills: [],
+      maxHoursPerWeek: '',
+      availability: []
+    });
+  };
+
+  const handleAddStaffFormChange = (field: string, value: string | string[]) => {
+    setAddStaffFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleAddStaff = async () => {
+    if (!managerUser || !managerSlots) return;
+
+    // 最終的な枠数チェック
+    if (managerSlots.availableSlots <= 0) {
+      alert('利用可能な枠がありません。');
+      return;
+    }
+
+    // 必須フィールドのバリデーション
+    if (!addStaffFormData.name || !addStaffFormData.loginId || !addStaffFormData.password) {
+      alert('名前、ログインID、パスワードは必須です。');
+      return;
+    }
+
+    try {
+      setAddStaffLoading(true);
+
+      // スタッフをusersコレクションに追加
+      const staffData = {
+        uid: `staff_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId: addStaffFormData.loginId,
+        name: addStaffFormData.name,
+        password: addStaffFormData.password,
+        role: 'staff',
+        managerId: managerUser.uid,
+        employmentType: addStaffFormData.employmentType,
+        skills: addStaffFormData.skills,
+        availability: addStaffFormData.availability,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // 条件付きでオプションフィールドを追加（undefinedを避ける）
+      if (addStaffFormData.hourlyRate && addStaffFormData.hourlyRate.trim() !== '') {
+        staffData.hourlyRate = parseFloat(addStaffFormData.hourlyRate);
+      }
+      if (addStaffFormData.maxHoursPerWeek && addStaffFormData.maxHoursPerWeek.trim() !== '') {
+        staffData.maxHoursPerWeek = parseInt(addStaffFormData.maxHoursPerWeek);
+      }
+
+      await addDoc(collection(db, 'users'), staffData);
+
+      // 枠数情報を更新（自動で usedSlots が再計算される）
+      const updatedSlots = await slotManagementService.getManagerSlots(managerUser.uid);
+      setManagerSlots(updatedSlots);
+
+      alert(`スタッフ「${addStaffFormData.name}」を追加しました。`);
+      handleCloseAddStaffModal();
+    } catch (error) {
+      console.error('Error adding staff:', error);
+      alert('スタッフの追加に失敗しました。');
+    } finally {
+      setAddStaffLoading(false);
+    }
+  };
+
+  // スタッフ編集関連のハンドラー
+  const handleShowEditStaffModal = (staffMember: User) => {
+    setEditingStaff(staffMember);
+    setEditStaffFormData({
+      name: staffMember.name,
+      loginId: staffMember.userId,
+      password: staffMember.password || '',
+      hourlyRate: staffMember.hourlyRate?.toString() || '',
+      employmentType: staffMember.employmentType || 'part-time',
+      skills: staffMember.skills || [],
+      maxHoursPerWeek: staffMember.maxHoursPerWeek?.toString() || '',
+      availability: staffMember.availability || []
+    });
+    setShowEditStaffModal(true);
+  };
+
+  const handleCloseEditStaffModal = () => {
+    setShowEditStaffModal(false);
+    setEditingStaff(null);
+    setEditStaffFormData({
+      name: '',
+      loginId: '',
+      password: '',
+      hourlyRate: '1000',
+      employmentType: 'part-time',
+      skills: [],
+      maxHoursPerWeek: '',
+      availability: []
+    });
+  };
+
+  const handleEditStaffFormChange = (field: string, value: string | string[]) => {
+    setEditStaffFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleUpdateStaff = async () => {
+    if (!editingStaff || !managerUser) return;
+
+    try {
+      setEditStaffLoading(true);
+
+      const updatedData = {
+        updatedAt: new Date()
+      };
+
+      // 時給のみを更新
+      if (editStaffFormData.hourlyRate && editStaffFormData.hourlyRate.trim() !== '') {
+        updatedData.hourlyRate = parseFloat(editStaffFormData.hourlyRate);
+      }
+
+      await userService.updateUser(editingStaff.uid, updatedData);
+
+      alert(`スタッフ「${editStaffFormData.name}」の情報を更新しました。`);
+      handleCloseEditStaffModal();
+    } catch (error) {
+      console.error('Error updating staff:', error);
+      alert('スタッフ情報の更新に失敗しました。');
+    } finally {
+      setEditStaffLoading(false);
+    }
+  };
+
+  const handleDeleteStaff = async (staffMember: User) => {
+    if (!confirm(`スタッフ「${staffMember.name}」を削除しますか？この操作は取り消せません。`)) {
+      return;
+    }
+
+    try {
+      await userService.deleteUser(staffMember.uid);
+      
+      // 枠数情報を更新
+      const updatedSlots = await slotManagementService.getManagerSlots(managerUser.uid);
+      setManagerSlots(updatedSlots);
+
+      alert(`スタッフ「${staffMember.name}」を削除しました。`);
+    } catch (error) {
+      console.error('Error deleting staff:', error);
+      alert('スタッフの削除に失敗しました。');
+    }
+  };
+
   const handleShowExport = handleExportShift; // 互換性のためのエイリアス
 
   const handleCloseExport = () => {
@@ -724,6 +923,10 @@ export default function ManagerCalendarPage() {
                 }
               }}
               loading={loading}
+              managerSlots={managerSlots}
+              onAddStaff={handleShowAddStaffModal}
+              onEditStaff={handleShowEditStaffModal}
+              onDeleteStaff={handleDeleteStaff}
             />
           </div>
         </div>
@@ -804,6 +1007,225 @@ export default function ManagerCalendarPage() {
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   )}
                   <span>{publishLoading ? '発行中...' : '発行する'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* スタッフ追加モーダル */}
+        {showAddStaffModal && (
+          <div className="fixed inset-0 backdrop-blur-sm bg-black/20 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">新規スタッフ追加</h3>
+              
+              {/* 枠数情報 */}
+              {managerSlots && (
+                <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    利用可能枠数: <span className="font-semibold">{managerSlots.availableSlots}</span> / {managerSlots.totalSlots}
+                  </p>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* 基本情報 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    名前 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={addStaffFormData.name}
+                    onChange={(e) => handleAddStaffFormChange('name', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="スタッフの名前"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ログインID <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={addStaffFormData.loginId}
+                    onChange={(e) => handleAddStaffFormChange('loginId', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="ログイン用ID"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    パスワード <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={addStaffFormData.password}
+                    onChange={(e) => handleAddStaffFormChange('password', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="パスワード6文字以上"
+                  />
+                </div>
+
+                {/* 雇用形態 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">雇用形態</label>
+                  <select
+                    value={addStaffFormData.employmentType}
+                    onChange={(e) => handleAddStaffFormChange('employmentType', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="part-time">パートタイム</option>
+                    <option value="full-time">フルタイム</option>
+                    <option value="contract">契約社員</option>
+                  </select>
+                </div>
+
+                {/* 時給 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">時給</label>
+                  <input
+                    type="number"
+                    value={addStaffFormData.hourlyRate}
+                    onChange={(e) => handleAddStaffFormChange('hourlyRate', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="1000"
+                  />
+                </div>
+
+                {/* 最大勤務時間 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">週最大勤務時間</label>
+                  <input
+                    type="number"
+                    value={addStaffFormData.maxHoursPerWeek}
+                    onChange={(e) => handleAddStaffFormChange('maxHoursPerWeek', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="40"
+                  />
+                </div>
+              </div>
+
+              {/* ボタン */}
+              <div className="flex space-x-3 justify-end mt-6">
+                <button
+                  onClick={handleCloseAddStaffModal}
+                  disabled={addStaffLoading}
+                  className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleAddStaff}
+                  disabled={addStaffLoading || !addStaffFormData.name || !addStaffFormData.loginId || !addStaffFormData.password}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {addStaffLoading && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  <span>{addStaffLoading ? '追加中...' : 'スタッフ追加'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* スタッフ編集モーダル */}
+        {showEditStaffModal && editingStaff && (
+          <div className="fixed inset-0 backdrop-blur-sm bg-black/20 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">スタッフ情報編集</h3>
+              
+              <div className="space-y-4">
+                {/* 基本情報 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    名前
+                  </label>
+                  <input
+                    type="text"
+                    value={editStaffFormData.name}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                    placeholder="スタッフの名前"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ログインID
+                  </label>
+                  <input
+                    type="text"
+                    value={editStaffFormData.loginId}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                    placeholder="ログイン用ID"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    パスワード
+                  </label>
+                  <input
+                    type="password"
+                    value={editStaffFormData.password}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                    placeholder="パスワード6文字以上"
+                  />
+                </div>
+
+                {/* 雇用形態 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">雇用形態</label>
+                  <select
+                    value={editStaffFormData.employmentType}
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-600 cursor-not-allowed"
+                  >
+                    <option value="part-time">パートタイム</option>
+                    <option value="full-time">フルタイム</option>
+                    <option value="contract">契約社員</option>
+                  </select>
+                </div>
+
+                {/* 時給 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">時給</label>
+                  <input
+                    type="number"
+                    value={editStaffFormData.hourlyRate}
+                    onChange={(e) => handleEditStaffFormChange('hourlyRate', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="1000"
+                  />
+                </div>
+
+
+              </div>
+
+              {/* ボタン */}
+              <div className="flex space-x-3 justify-end mt-6">
+                <button
+                  onClick={handleCloseEditStaffModal}
+                  disabled={editStaffLoading}
+                  className="px-4 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleUpdateStaff}
+                  disabled={editStaffLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center space-x-2"
+                >
+                  {editStaffLoading && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  )}
+                  <span>{editStaffLoading ? '更新中...' : '情報更新'}</span>
                 </button>
               </div>
             </div>

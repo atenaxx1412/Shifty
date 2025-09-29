@@ -60,18 +60,21 @@ export const fetchOptimizedShopsData = async (): Promise<ManagerWithStaff[]> => 
     const managersSnapshot = await getDocs(managersQuery);
     console.log(`📋 Managers found: ${managersSnapshot.size}`);
 
-    const managers = managersSnapshot.docs.map(doc => ({
-      uid: doc.data().uid,
-      userId: doc.data().userId,
-      name: doc.data().name,
-      role: doc.data().role,
-      shopName: doc.data().shopName,
-      shopAddress: doc.data().shopAddress,
-      shopPhone: doc.data().shopPhone,
-      shopEmail: doc.data().shopEmail,
-      createdAt: doc.data().createdAt?.toDate(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-    }));
+    const managers = managersSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        uid: data.uid,
+        userId: data.userId,
+        name: data.availability?.name || data.name,  // Support new data structure
+        role: data.availability?.role || data.role,  // Support new data structure
+        shopName: data.shopName,
+        shopAddress: data.shopAddress,
+        shopPhone: data.shopPhone,
+        shopEmail: data.shopEmail,
+        createdAt: data.createdAt?.toDate() || data.availability?.createdAt,
+        updatedAt: data.updatedAt?.toDate(),
+      };
+    });
 
     // 2. スタッフのみを効率的に取得（1クエリ）
     const staffQuery = query(
@@ -83,20 +86,23 @@ export const fetchOptimizedShopsData = async (): Promise<ManagerWithStaff[]> => 
     const staffSnapshot = await getDocs(staffQuery);
     console.log(`👥 Staff found: ${staffSnapshot.size}`);
 
-    const staff = staffSnapshot.docs.map(doc => ({
-      uid: doc.data().uid,
-      userId: doc.data().userId,
-      name: doc.data().name,
-      role: doc.data().role,
-      managerId: doc.data().managerId,
-      hourlyRate: doc.data().hourlyRate,
-      employmentType: doc.data().employmentType,
-      skills: doc.data().skills,
-      maxHoursPerWeek: doc.data().maxHoursPerWeek,
-      availability: doc.data().availability,
-      createdAt: doc.data().createdAt?.toDate(),
-      updatedAt: doc.data().updatedAt?.toDate(),
-    }));
+    const staff = staffSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        uid: data.uid,
+        userId: data.userId,
+        name: data.name,
+        role: data.role,
+        managerId: data.managerId,
+        hourlyRate: data.hourlyRate,
+        employmentType: data.employmentType,
+        skills: data.skills,
+        maxHoursPerWeek: data.maxHoursPerWeek,
+        availability: data.availability,
+        createdAt: data.createdAt?.toDate(),
+        updatedAt: data.updatedAt?.toDate(),
+      };
+    });
 
     // 3. データを効率的に組み合わせ（クライアント側で最適化）
     const managersWithStaff: ManagerWithStaff[] = managers.map(manager => {
@@ -170,6 +176,7 @@ export const fetchOptimizedShopsStats = async (): Promise<ShopsStatsData> => {
 /**
  * キャッシュ効率レポート（shops用）
  */
+
 export const getShopsCacheEfficiencyReport = () => {
   const originalQueries = {
     shops: 1, // 元の全ユーザー取得
